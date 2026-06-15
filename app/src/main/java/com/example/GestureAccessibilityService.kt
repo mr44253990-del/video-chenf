@@ -29,6 +29,9 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     private var lastNearTime = 0L
     private val handler = Handler(Looper.getMainLooper())
     private val doubleWaveTimeout = 700L
+    
+    private var isPaused = false
+    private var lastClickTime = 0L
 
     private val singleWaveRunnable = Runnable {
         performSwipeUp()
@@ -52,19 +55,43 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
 
     private fun setupOverlay() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val clickDelay = 400L
         overlayView = TextView(this).apply {
-            text = "⬤ Active"
+            text = "â¬¤ Active"
             setTextColor(Color.GREEN)
             textSize = 14f
             setPadding(32, 64, 32, 32)
             setBackgroundColor(Color.TRANSPARENT)
+            
+            setOnTouchListener { _, event ->
+                if (event.action == android.view.MotionEvent.ACTION_DOWN) {
+                    val clickTime = System.currentTimeMillis()
+                    if (clickTime - lastClickTime < clickDelay) {
+                        // Double tap detected
+                        isPaused = !isPaused
+                        if (isPaused) {
+                            text = "â¬¤ Paused"
+                            setTextColor(Color.RED)
+                            vibrate(50)
+                        } else {
+                            text = "â¬¤ Active"
+                            setTextColor(Color.GREEN)
+                            vibrate(50)
+                        }
+                        lastClickTime = 0L // Reset
+                    } else {
+                        lastClickTime = clickTime
+                    }
+                }
+                true
+            }
         }
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
@@ -78,12 +105,14 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
+        if (isPaused) return
+
         if (event?.sensor?.type == Sensor.TYPE_PROXIMITY) {
             val distance = event.values[0]
             val maxRange = proximitySensor?.maximumRange ?: 5f
             
-            // Assume < 3.0f or less than maxRange is "NEAR"
-            val isNear = distance < maxRange && distance < 3.0f
+            // Use just maxRange to get the maximum possible distance the sensor supports
+            val isNear = distance < maxRange
             
             if (isNear) {
                 val now = System.currentTimeMillis()
