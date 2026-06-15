@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">WaveScroll</string>
+    <string name="accessibility_service_description">This service allows scrolling and double-tapping via proximity sensor gestures to control short videos (like TikTok).</string>
+</resources>

@@ -1,0 +1,6 @@
+{
+  "name": "WaveScroll",
+  "description": "Control TikTok videos via hand gestures using the proximity sensor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
