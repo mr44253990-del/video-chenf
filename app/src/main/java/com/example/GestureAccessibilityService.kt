@@ -38,7 +38,6 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     
     // Bubble UI
     private var overlayRoot: LinearLayout? = null
-    private var mainBubble: TextView? = null
     private var bubbleContainer: FrameLayout? = null
     private var visualizerView: VisualizerBubbleView? = null
     private var expandedControls: LinearLayout? = null
@@ -183,6 +182,36 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         }
     }
 
+    private var dimView: View? = null
+    private var isAutoScrollEnabled = false
+    private val autoScrollRunnable = object : Runnable {
+        override fun run() {
+            if (isAutoScrollEnabled && isAppSupported && !isPaused) {
+                performSwipeUp()
+                handler.postDelayed(this, 10000L) // every 10 seconds
+            }
+        }
+    }
+    
+    private fun toggleDimMode() {
+        if (dimView != null) {
+            try { windowManager?.removeView(dimView) } catch (e: Exception){}
+            dimView = null
+        } else {
+            dimView = View(this).apply {
+                setBackgroundColor(Color.parseColor("#99000000"))
+            }
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT
+            )
+            try { windowManager?.addView(dimView, params) } catch (e: Exception){}
+        }
+    }
+
     private fun setupOverlay() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         
@@ -193,25 +222,13 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         }
 
         val density = resources.displayMetrics.density
-        val visSize = (140 * density).toInt()
-        val bubbleSize = (60 * density).toInt()
+        val scale = prefs.getFloat("bubbleScale", 1.0f)
+        val visSize = (140 * density * scale).toInt()
         
         visualizerView = VisualizerBubbleView(this)
-        
-        mainBubble = TextView(this).apply {
-            text = "🖐"
-            setTextColor(Color.WHITE)
-            textSize = 24f
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#E6000000")) // Semi-transparent black center
-            }
-        }
 
         bubbleContainer = FrameLayout(this).apply {
             addView(visualizerView, FrameLayout.LayoutParams(visSize, visSize, Gravity.CENTER))
-            addView(mainBubble, FrameLayout.LayoutParams(bubbleSize, bubbleSize, Gravity.CENTER))
 
             var clickDelay = 300L
             var initialX = 0
@@ -276,16 +293,27 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             visibility = View.GONE
             setPadding(16, 0, 0, 0)
             
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            var isMuted = false
             val muteBtn = createControlButton("🔇", "Mute") {
-                // Future Implementation for Volume Control
+                isMuted = !isMuted
+                val direction = if (isMuted) android.media.AudioManager.ADJUST_MUTE else android.media.AudioManager.ADJUST_UNMUTE
+                audioManager.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, direction, android.media.AudioManager.FLAG_SHOW_UI)
                 vibrate(20)
             }
+            
             val brightnessBtn = createControlButton("🔆", "Dim") {
-                // Future Implementation for Brightness
+                toggleDimMode()
                 vibrate(20)
             }
+            
             val autoScrollBtn = createControlButton("⏱️", "Auto") {
-                // Future Implementation for Auto-scroll
+                isAutoScrollEnabled = !isAutoScrollEnabled
+                if (isAutoScrollEnabled) {
+                    handler.postDelayed(autoScrollRunnable, 5000L)
+                } else {
+                    handler.removeCallbacks(autoScrollRunnable)
+                }
                 vibrate(20)
             }
             
@@ -335,35 +363,15 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     }
 
     private fun updateOverlayText() {
-        val colorScheme = prefs.getString("btnColor", "Green/Red") ?: "Green/Red"
-        val activeColor = if (colorScheme == "Blue/Yellow") Color.parseColor("#00E5FF") else Color.GREEN
-        val pausedColor = if (colorScheme == "Blue/Yellow") Color.YELLOW else Color.RED
-        val idleColor = Color.GRAY
+        val scale = prefs.getFloat("bubbleScale", 1.0f)
+        val density = resources.displayMetrics.density
+        val visSize = (140 * density * scale).toInt()
         
-        var borderColor = activeColor
-        var bubbleText = "🖐"
-        
-        if (!isAppSupported) {
-            borderColor = idleColor
-            bubbleText = "💤"
-        } else if (isPaused) {
-            borderColor = pausedColor
-            bubbleText = "⏸"
-        }
-        
-        mainBubble?.text = bubbleText
+        visualizerView?.layoutParams = FrameLayout.LayoutParams(visSize, visSize, Gravity.CENTER)
     }
 
     private fun updateOverlaySettings() {
         updateOverlayText()
-        val sizeStr = prefs.getString("btnSize", "Medium") ?: "Medium"
-        // Removing explicit gravity positions so dragging isn't restricted by START/END constraints
-        
-        mainBubble?.textSize = when(sizeStr) {
-            "Small" -> 10f
-            "Large" -> 18f
-            else -> 14f
-        }
     }
 
     override fun onSensorChanged(event: SensorEvent?) {

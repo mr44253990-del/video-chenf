@@ -203,10 +203,16 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             }
             Card(modifier = Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                Column(Modifier.padding(12.dp)) {
-                    Text("Button Size", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    SettingDropdown("", btnSize, listOf("Small", "Medium", "Large")) { 
-                        btnSize = it; prefs.edit().putString("btnSize", it).apply() 
-                    }
+                    Text("Bubble Size", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    var scale by remember { androidx.compose.runtime.mutableFloatStateOf(prefs.getFloat("bubbleScale", 1.0f)) }
+                    androidx.compose.material3.Slider(
+                        value = scale,
+                        onValueChange = { 
+                            scale = it
+                            prefs.edit().putFloat("bubbleScale", it).apply() 
+                        },
+                        valueRange = 0.5f..2.0f
+                    )
                 }
             }
         }
