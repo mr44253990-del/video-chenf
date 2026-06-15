@@ -24,6 +24,7 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.FrameLayout
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
@@ -38,6 +39,8 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     // Bubble UI
     private var overlayRoot: LinearLayout? = null
     private var mainBubble: TextView? = null
+    private var bubbleContainer: FrameLayout? = null
+    private var visualizerView: VisualizerBubbleView? = null
     private var expandedControls: LinearLayout? = null
     private var isMenuExpanded = false
 
@@ -149,8 +152,10 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
                                 animateBubbleScale(scale)
                             }
                         }
-                        override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, samplingRate: Int) {}
-                    }, Visualizer.getMaxCaptureRate() / 2, true, false)
+                        override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, samplingRate: Int) {
+                            visualizerView?.updateVisualizer(fft)
+                        }
+                    }, Visualizer.getMaxCaptureRate() / 2, false, true)
                     visualizer?.enabled = true
                 }
             } catch (e: Exception) {
@@ -164,6 +169,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             visualizer?.enabled = false
             visualizer?.release()
             visualizer = null
+            visualizerView?.updateVisualizer(null)
             animateBubbleScale(1f)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -172,8 +178,8 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
 
     private fun animateBubbleScale(scale: Float) {
         handler.post {
-            mainBubble?.scaleX = scale
-            mainBubble?.scaleY = scale
+            bubbleContainer?.scaleX = scale
+            bubbleContainer?.scaleY = scale
         }
     }
 
@@ -186,12 +192,27 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             setPadding(8, 8, 8, 8)
         }
 
+        val density = resources.displayMetrics.density
+        val visSize = (140 * density).toInt()
+        val bubbleSize = (60 * density).toInt()
+        
+        visualizerView = VisualizerBubbleView(this)
+        
         mainBubble = TextView(this).apply {
-            text = "🖐 Wave"
+            text = "🖐"
             setTextColor(Color.WHITE)
-            textSize = 14f
-            setPadding(40, 20, 40, 20)
-            
+            textSize = 24f
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#E6000000")) // Semi-transparent black center
+            }
+        }
+
+        bubbleContainer = FrameLayout(this).apply {
+            addView(visualizerView, FrameLayout.LayoutParams(visSize, visSize, Gravity.CENTER))
+            addView(mainBubble, FrameLayout.LayoutParams(bubbleSize, bubbleSize, Gravity.CENTER))
+
             var clickDelay = 300L
             var initialX = 0
             var initialY = 0
@@ -273,7 +294,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             addView(autoScrollBtn)
         }
 
-        overlayRoot?.addView(mainBubble)
+        overlayRoot?.addView(bubbleContainer)
         overlayRoot?.addView(expandedControls)
 
         val params = WindowManager.LayoutParams(
@@ -320,23 +341,17 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         val idleColor = Color.GRAY
         
         var borderColor = activeColor
-        var bubbleText = "🖐 Wave"
+        var bubbleText = "🖐"
         
         if (!isAppSupported) {
             borderColor = idleColor
-            bubbleText = "💤 Idle"
+            bubbleText = "💤"
         } else if (isPaused) {
             borderColor = pausedColor
-            bubbleText = "⏸ Paused"
+            bubbleText = "⏸"
         }
         
         mainBubble?.text = bubbleText
-        mainBubble?.background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = 100f
-            setColor(Color.parseColor("#CC121212")) // Dark background
-            setStroke(4, borderColor) // Glowing border
-        }
     }
 
     private fun updateOverlaySettings() {
