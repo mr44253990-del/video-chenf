@@ -53,7 +53,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     private lateinit var prefs: SharedPreferences
 
     // App-Specific Detection
-    private var isAppSupported = false
+    private var isAppSupported = true // Auto-hide disabled per user request
     private var currentPackage = ""
     private var targetPackages = setOf<String>()
     
@@ -116,7 +116,8 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             if (packageName != null && packageName != "com.android.systemui") {
                 currentPackage = packageName
                 targetPackages = getSupportedApps()
-                isAppSupported = targetPackages.contains(currentPackage)
+                // Auto-hide disabled so the bubble is always visible:
+                isAppSupported = true 
                 
                 if (isAppSupported) {
                     overlayRoot?.visibility = View.VISIBLE
