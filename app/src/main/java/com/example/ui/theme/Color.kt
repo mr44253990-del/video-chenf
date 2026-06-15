@@ -2,10 +2,12 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+val BgDark = Color(0xFF131114) // Deep dark space background
+val SurfaceDark = Color(0xFF221F25)
+val PrimaryNeon = Color(0xFFFFB703) // Glowing Gold/Yellow
+val SecondaryNeon = Color(0xFF7209B7) // Purple glow
+val TertiaryNeon = Color(0xFF00F5D4) // Greenish cyan
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+val TextPrimary = Color(0xFFE5E5E5)
+val TextSecondary = Color(0xFFA0A0A0)
+val SurfaceVariantDark = Color(0xFF2C2830)
