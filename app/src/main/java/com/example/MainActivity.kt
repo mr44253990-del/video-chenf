@@ -3,9 +3,12 @@ package com.example
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -25,12 +28,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.PrimaryNeon
 import com.example.ui.theme.SecondaryNeon
+import com.example.ui.theme.TertiaryNeon
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -64,7 +69,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var hasOverlay by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasAccessibility by remember { mutableStateOf(isAccessibilityEnabled(context)) }
-    
+    var hasAudioPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) }
+
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
@@ -72,19 +78,22 @@ fun MainScreen(modifier: Modifier = Modifier) {
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasOverlay = Settings.canDrawOverlays(context)
                 hasAccessibility = isAccessibilityEnabled(context)
+                hasAudioPermission = ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    if (hasOverlay && hasAccessibility) {
+    if (hasOverlay && hasAccessibility && hasAudioPermission) {
         SettingsScreen(modifier = modifier)
     } else {
         SetupScreen(
             modifier = modifier,
             hasOverlay = hasOverlay,
             hasAccessibility = hasAccessibility,
+            hasAudioPermission = hasAudioPermission,
+            onAudioPermissionGranted = { hasAudioPermission = true },
             context = context
         )
     }
@@ -202,6 +211,59 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             }
         }
         
+        // Custom App Settings
+        Text("Custom Apps (Package Names)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        var customAppInput by remember { mutableStateOf("") }
+        var customAppsList by remember { mutableStateOf(prefs.getStringSet("customApps", emptySet()) ?: emptySet()) }
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = customAppInput,
+                    onValueChange = { customAppInput = it },
+                    label = { Text("e.g. com.facebook.katana") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryNeon
+                    ),
+                    trailingIcon = {
+                        TextButton(onClick = {
+                            if (customAppInput.isNotBlank()) {
+                                val newList = customAppsList.toMutableSet()
+                                newList.add(customAppInput.trim())
+                                customAppsList = newList
+                                prefs.edit().putStringSet("customApps", newList).apply()
+                                customAppInput = ""
+                            }
+                        }) {
+                            Text("Add", color = PrimaryNeon)
+                        }
+                    }
+                )
+
+                if (customAppsList.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        customAppsList.forEach { app ->
+                            Row(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(app, fontSize = 14.sp)
+                                TextButton(onClick = {
+                                    val newList = customAppsList.toMutableSet()
+                                    newList.remove(app)
+                                    customAppsList = newList
+                                    prefs.edit().putStringSet("customApps", newList).apply()
+                                }) {
+                                    Text("Remove", color = Color.Red, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         SettingDropdown("Position on screen", btnPosition, listOf("Top-Start", "Top-End", "Bottom-Start", "Bottom-End")) { 
             btnPosition = it; prefs.edit().putString("btnPosition", it).apply() 
         }
@@ -310,8 +372,19 @@ fun SetupScreen(
     modifier: Modifier = Modifier,
     hasOverlay: Boolean,
     hasAccessibility: Boolean,
+    hasAudioPermission: Boolean,
+    onAudioPermissionGranted: () -> Unit,
     context: Context
 ) {
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
+            if (isGranted) {
+                onAudioPermissionGranted()
+            }
+        }
+    )
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -329,7 +402,7 @@ fun SetupScreen(
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "এই অ্যাপটি টিকটক (Asia/Global), YouTube Shorts, এবং Instagram Reels-এ হাতের ইশারা দিয়ে ভিডিও চেঞ্জ করার জন্য। এটি ব্যাকগ্রাউন্ডে চলবে এবং অন্য অ্যাপে গেলে অটো-অফ হবে।",
+            text = "এই অ্যাপটি টিকটক, YouTube Shorts, এবং Instagram Reels-এ হাতের ইশারা দিয়ে ভিডিও চেঞ্জ করার জন্য। মিউজিক ভিজ্যুয়ালাইজারের জন্য অডিও পারমিশন প্রয়োজন।",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -363,6 +436,20 @@ fun SetupScreen(
             )
         ) {
             Text(if (hasAccessibility) "✔ অ্যাক্সেসিবিলিটি চালু হয়েছে" else "২. সার্ভসটি চালু করুন (WaveScroll)")
+        }
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = {
+                audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            },
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (hasAudioPermission) MaterialTheme.colorScheme.surfaceVariant else TertiaryNeon,
+                contentColor = if (hasAudioPermission) Color.White else Color.Black
+            )
+        ) {
+            Text(if (hasAudioPermission) "✔ অডিও পারমিশন দেওয়া হয়েছে" else "৩. অডিও পারমিশন দিন (Visualizer)")
         }
     }
 }
