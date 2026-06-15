@@ -7,6 +7,7 @@ import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.Path
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -16,8 +17,10 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.widget.LinearLayout
 import android.widget.TextView
 
 class GestureAccessibilityService : AccessibilityService(), SensorEventListener {
@@ -25,7 +28,12 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     private lateinit var sensorManager: SensorManager
     private var proximitySensor: Sensor? = null
     private var windowManager: WindowManager? = null
-    private var overlayView: TextView? = null
+    
+    // Bubble UI
+    private var overlayRoot: LinearLayout? = null
+    private var mainBubble: TextView? = null
+    private var expandedControls: LinearLayout? = null
+    private var isMenuExpanded = false
 
     private var isPaused = false
     private var lastClickTime = 0L
@@ -38,8 +46,18 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
 
     private lateinit var prefs: SharedPreferences
 
+    // App-Specific Detection
+    private var isAppSupported = true
+    private var currentPackage = ""
+    private val targetPackages = setOf(
+        "com.zhiliaoapp.musically", // TikTok (Asia)
+        "com.ss.android.ugc.trill", // TikTok (Global)
+        "com.google.android.youtube", // YouTube (Shorts)
+        "com.instagram.android" // Instagram (Reels)
+    )
+
     private val waveActionRunnable = Runnable {
-        if (!isPaused && waveCount == 1) {
+        if (!isPaused && isAppSupported && waveCount == 1) {
             performSwipeUp()
             vibrate(50)
         }
@@ -47,7 +65,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     }
 
     private val longPressRunnable = Runnable {
-        if (!isPaused) {
+        if (!isPaused && isAppSupported) {
             longPressTriggered = true
             performCenterTap() // Center tap for play/pause
             vibrate(100)
@@ -66,31 +84,54 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         proximitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY)
         proximitySensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST)
         }
 
         setupOverlay()
         updateOverlaySettings()
     }
 
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val packageName = event.packageName?.toString()
+            if (packageName != null && packageName != "com.android.systemui") {
+                currentPackage = packageName
+                isAppSupported = targetPackages.contains(currentPackage)
+                // If it's a launcher or random app, hide the bubble or indicate idle
+                updateOverlayText()
+            }
+        }
+    }
+
     private fun setupOverlay() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val clickDelay = 400L
-        overlayView = TextView(this).apply {
-            text = "⬤ Active"
-            setTextColor(Color.GREEN)
-            setPadding(32, 64, 32, 32)
-            setBackgroundColor(Color.TRANSPARENT)
+        
+        overlayRoot = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(8, 8, 8, 8)
+        }
+
+        mainBubble = TextView(this).apply {
+            text = "🖐 Wave"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setPadding(40, 20, 40, 20)
             
+            // Double tap to pause, single tap to expand menu
+            var clickDelay = 300L
             setOnTouchListener { _, event ->
                 if (event.action == android.view.MotionEvent.ACTION_DOWN) {
                     val clickTime = System.currentTimeMillis()
                     if (clickTime - lastClickTime < clickDelay) {
+                        // Double tap
                         isPaused = !isPaused
                         updateOverlayText()
                         vibrate(50)
                         lastClickTime = 0L
                     } else {
+                        // Single tap - just toggle menu after a tiny delay or directly
+                        toggleMenu()
                         lastClickTime = clickTime
                     }
                 }
@@ -98,31 +139,88 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             }
         }
 
+        expandedControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+            setPadding(16, 0, 0, 0)
+            
+            val muteBtn = createControlButton("🔇", "Mute") {
+                // Future Implementation for Volume Control
+                vibrate(20)
+            }
+            val brightnessBtn = createControlButton("🔆", "Dim") {
+                // Future Implementation for Brightness
+                vibrate(20)
+            }
+            val autoScrollBtn = createControlButton("⏱️", "Auto") {
+                // Future Implementation for Auto-scroll
+                vibrate(20)
+            }
+            
+            addView(muteBtn)
+            addView(brightnessBtn)
+            addView(autoScrollBtn)
+        }
+
+        overlayRoot?.addView(mainBubble)
+        overlayRoot?.addView(expandedControls)
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, // allow touch events but not focus
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         )
         try {
-            windowManager?.addView(overlayView, params)
+            windowManager?.addView(overlayRoot, params)
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
+    private fun createControlButton(icon: String, label: String, onClick: () -> Unit): TextView {
+        return TextView(this).apply {
+            text = icon
+            textSize = 18f
+            setPadding(24, 20, 24, 20)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#44FFFFFF"))
+            }
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun toggleMenu() {
+        isMenuExpanded = !isMenuExpanded
+        expandedControls?.visibility = if (isMenuExpanded) View.VISIBLE else View.GONE
+        vibrate(30)
+    }
+
     private fun updateOverlayText() {
         val colorScheme = prefs.getString("btnColor", "Green/Red") ?: "Green/Red"
-        val activeColor = if (colorScheme == "Blue/Yellow") Color.BLUE else Color.GREEN
+        val activeColor = if (colorScheme == "Blue/Yellow") Color.parseColor("#00E5FF") else Color.GREEN
         val pausedColor = if (colorScheme == "Blue/Yellow") Color.YELLOW else Color.RED
+        val idleColor = Color.GRAY
         
-        if (isPaused) {
-            overlayView?.text = "⬤ Paused"
-            overlayView?.setTextColor(pausedColor)
-        } else {
-            overlayView?.text = "⬤ Active"
-            overlayView?.setTextColor(activeColor)
+        var borderColor = activeColor
+        var bubbleText = "🖐 Wave"
+        
+        if (!isAppSupported) {
+            borderColor = idleColor
+            bubbleText = "💤 Idle"
+        } else if (isPaused) {
+            borderColor = pausedColor
+            bubbleText = "⏸ Paused"
+        }
+        
+        mainBubble?.text = bubbleText
+        mainBubble?.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 100f
+            setColor(Color.parseColor("#CC121212")) // Dark background
+            setStroke(4, borderColor) // Glowing border
         }
     }
 
@@ -131,7 +229,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         val sizeStr = prefs.getString("btnSize", "Medium") ?: "Medium"
         val posStr = prefs.getString("btnPosition", "Top-End") ?: "Top-End"
         
-        overlayView?.textSize = when(sizeStr) {
+        mainBubble?.textSize = when(sizeStr) {
             "Small" -> 10f
             "Large" -> 18f
             else -> 14f
@@ -144,11 +242,11 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             "Bottom-Start" -> gravity = Gravity.BOTTOM or Gravity.START
         }
         
-        val params = overlayView?.layoutParams as? WindowManager.LayoutParams
+        val params = overlayRoot?.layoutParams as? WindowManager.LayoutParams
         if (params != null) {
             params.gravity = gravity
             try {
-                windowManager?.updateViewLayout(overlayView, params)
+                windowManager?.updateViewLayout(overlayRoot, params)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -156,14 +254,14 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (isPaused) return
+        if (isPaused || !isAppSupported) return
 
         if (event?.sensor?.type == Sensor.TYPE_PROXIMITY) {
             val distance = event.values[0]
             val maxRange = proximitySensor?.maximumRange ?: 5f
             val isNear = distance < maxRange
 
-            val doubleWaveTimeout = prefs.getLong("doubleWaveTime", 600L)
+            val doubleWaveTimeout = prefs.getLong("doubleWaveTime", 250L)
             val longPressTimeout = prefs.getLong("longPressTime", 1000L)
 
             if (isNear) {
@@ -259,7 +357,6 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 
     override fun onDestroy() {
@@ -267,7 +364,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         sensorManager.unregisterListener(this)
         try {
-            overlayView?.let { windowManager?.removeView(it) }
+            overlayRoot?.let { windowManager?.removeView(it) }
         } catch (e: Exception) {
             e.printStackTrace()
         }

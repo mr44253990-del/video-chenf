@@ -8,17 +8,29 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.PrimaryNeon
+import com.example.ui.theme.SecondaryNeon
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,11 +38,24 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    bottomBar = { AppBottomNav() }
+                ) { innerPadding ->
                     MainScreen(modifier = Modifier.padding(innerPadding))
                 }
             }
         }
+    }
+}
+
+@Composable
+fun AppBottomNav() {
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+        NavigationBarItem(selected = true, onClick = {}, icon = { Text("⚙️") }, label = { Text("Settings") })
+        NavigationBarItem(selected = false, onClick = {}, icon = { Text("🖐") }, label = { Text("Gestures") })
+        NavigationBarItem(selected = false, onClick = {}, icon = { Text("▶️") }, label = { Text("Preview") })
+        NavigationBarItem(selected = false, onClick = {}, icon = { Text("ℹ️") }, label = { Text("About") })
     }
 }
 
@@ -71,7 +96,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = context.getSharedPreferences("WaveScrollPrefs", Context.MODE_PRIVATE)
     
-    var doubleWaveTime by remember { mutableFloatStateOf(prefs.getLong("doubleWaveTime", 600L).toFloat()) }
+    var doubleWaveTime by remember { mutableFloatStateOf(prefs.getLong("doubleWaveTime", 250L).toFloat()) }
     var longPressTime by remember { mutableFloatStateOf(prefs.getLong("longPressTime", 1000L).toFloat()) }
     var scrollSpeed by remember { mutableFloatStateOf(prefs.getLong("scrollSpeed", 300L).toFloat()) }
 
@@ -83,80 +108,160 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Text(
-            text = "WaveScroll Settings",
-            style = MaterialTheme.typography.headlineMedium
-        )
+        // Top Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("💡 ", fontSize = 28.sp)
+                Column {
+                    Text("Gesture Control", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = PrimaryNeon))
+                    Text("Customize your gesture experience", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Button(onClick = {}, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Text("▶ Preview", color = PrimaryNeon)
+            }
+        }
 
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+        // Tips Card with Glow
+        Box(
+            modifier = Modifier
+                .shadow(8.dp, RoundedCornerShape(16.dp))
+                .background(
+                    brush = Brush.linearGradient(listOf(Color(0xFF2A1C20), Color(0xFF1E1724))),
+                    shape = RoundedCornerShape(16.dp)
+                )
+                .clip(RoundedCornerShape(16.dp))
+        ) {
             Text(
                 text = "💡 টিপস:\n- একবার হাত নাড়ালে ভিডিও চেঞ্জ হবে।\n- দ্রুত দুইবার হাত নাড়ালে ভিডিও লাইক হবে।\n- কিছুক্ষণ হাত ধরে রাখলে ভিডিও Pause/Play হবে।\n- স্ক্রিনে 'Active' লেখায় বারবার ২ বার টাচ করলে অপশনটি অফ/অন হবে।",
                 modifier = Modifier.padding(16.dp),
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White
             )
         }
 
-        HorizontalDivider()
+        // Action Grid
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ActionCube(Modifier.weight(1f), "🖐", "Wave", "Like", Color(0xFF42A5F5))
+            ActionCube(Modifier.weight(1f), "✋", "Hold", "Play/Pause", Color(0xFFFFA726))
+            ActionCube(Modifier.weight(1f), "↔️", "Swipe", "Scroll", Color(0xFFAB47BC))
+            ActionCube(Modifier.weight(1f), "👆", "Tap", "Toggle", Color(0xFF66BB6A))
+        }
 
-        Text("Gesture Timings", style = MaterialTheme.typography.titleMedium)
+        // Timings Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Gesture Timings", fontWeight = FontWeight.Bold)
+                    Text("↺ Restore Defaults", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+                
+                NeonSliderRow("〰️", "Double Wave Delay", "দুইবার হাত নাড়ানোর সময়ের ব্যবধান", doubleWaveTime, 150f..1000f, SecondaryNeon) { 
+                    doubleWaveTime = it; prefs.edit().putLong("doubleWaveTime", it.toLong()).apply() 
+                }
+                
+                NeonSliderRow("⏸", "Hold Time (Video Play/Pause)", "হাত ধরে রাখার সময়", longPressTime, 500f..2500f, PrimaryNeon) { 
+                    longPressTime = it; prefs.edit().putLong("longPressTime", it.toLong()).apply() 
+                }
+                
+                NeonSliderRow("↕", "Scroll Swipe Speed", "স্ক্রোল করার গতি", scrollSpeed, 100f..1000f, Color(0xFF66BB6A)) { 
+                    scrollSpeed = it; prefs.edit().putLong("scrollSpeed", it.toLong()).apply() 
+                }
+            }
+        }
+
+        // UI Settings
+        Text("Active Button UI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         
-        Column {
-            Text("Double Wave Delay: ${doubleWaveTime.toInt()} ms")
-            Slider(
-                value = doubleWaveTime,
-                onValueChange = { 
-                    doubleWaveTime = it 
-                    prefs.edit().putLong("doubleWaveTime", it.toLong()).apply()
-                },
-                valueRange = 300f..1500f
-            )
-            Text("কত সময়ের মধ্যে দুইবার হাত নাড়ালে 'লাইক' হবে", style = MaterialTheme.typography.bodySmall)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Card(modifier = Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Color Scheme", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    SettingDropdown("", btnColor, listOf("Green/Red", "Blue/Yellow")) { 
+                        btnColor = it; prefs.edit().putString("btnColor", it).apply() 
+                    }
+                }
+            }
+            Card(modifier = Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+               Column(Modifier.padding(12.dp)) {
+                    Text("Button Size", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    SettingDropdown("", btnSize, listOf("Small", "Medium", "Large")) { 
+                        btnSize = it; prefs.edit().putString("btnSize", it).apply() 
+                    }
+                }
+            }
         }
-
-        Column {
-            Text("Hold Time (Video Play/Pause): ${longPressTime.toInt()} ms")
-            Slider(
-                value = longPressTime,
-                onValueChange = { 
-                    longPressTime = it 
-                    prefs.edit().putLong("longPressTime", it.toLong()).apply()
-                },
-                valueRange = 500f..2500f
-            )
-        }
-
-        Column {
-            Text("Scroll Swipe Speed: ${scrollSpeed.toInt()} ms")
-            Slider(
-                value = scrollSpeed,
-                onValueChange = { 
-                    scrollSpeed = it 
-                    prefs.edit().putLong("scrollSpeed", it.toLong()).apply()
-                },
-                valueRange = 100f..1000f
-            )
-        }
-
-        HorizontalDivider()
-
-        Text("Active Button UI", style = MaterialTheme.typography.titleMedium)
         
-        SettingDropdown("Color Scheme", btnColor, listOf("Green/Red", "Blue/Yellow")) { 
-            btnColor = it; prefs.edit().putString("btnColor", it).apply() 
-        }
-
-        SettingDropdown("Button Size", btnSize, listOf("Small", "Medium", "Large")) { 
-            btnSize = it; prefs.edit().putString("btnSize", it).apply() 
-        }
-
-        SettingDropdown("Button Position", btnPosition, listOf("Top-Start", "Top-End", "Bottom-Start", "Bottom-End")) { 
+        SettingDropdown("Position on screen", btnPosition, listOf("Top-Start", "Top-End", "Bottom-Start", "Bottom-End")) { 
             btnPosition = it; prefs.edit().putString("btnPosition", it).apply() 
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
+
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+fun ActionCube(modifier: Modifier = Modifier, icon: String, title: String, subtitle: String, tint: Color) {
+    Card(
+        modifier = modifier.aspectRatio(0.85f),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(tint.copy(alpha = 0.2f), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(icon, fontSize = 20.sp)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+fun NeonSliderRow(icon: String, title: String, sub: String, value: Float, range: ClosedFloatingPointRange<Float>, neonColor: Color, onValueChange: (Float) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(icon, color = Color.White)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text("${value.toInt()} ms", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(sub, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                valueRange = range,
+                colors = SliderDefaults.colors(thumbColor = neonColor, activeTrackColor = neonColor, inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant)
+            )
+        }
     }
 }
 
@@ -173,11 +278,14 @@ fun SettingDropdown(label: String, selectedValue: String, options: List<String>,
             value = selectedValue,
             onValueChange = {},
             readOnly = true,
-            label = { Text(label) },
+            label = if (label.isNotEmpty()) { { Text(label) } } else null,
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             },
-            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                unfocusedBorderColor = Color.Transparent,
+                focusedBorderColor = PrimaryNeon
+            ),
             modifier = Modifier.menuAnchor().fillMaxWidth()
         )
         ExposedDropdownMenu(
@@ -207,44 +315,54 @@ fun SetupScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
+        Box(modifier = Modifier.size(64.dp).background(PrimaryNeon.copy(alpha=0.2f), RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
+            Text("🖐", fontSize = 32.sp)
+        }
+        Spacer(Modifier.height(16.dp))
         Text(
             text = "WaveScroll Setup",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(bottom = 16.dp)
+            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+            color = PrimaryNeon
         )
+        Spacer(Modifier.height(8.dp))
         Text(
-            text = "এই অ্যাপটি টিকটকে হাতের ইশারা দিয়ে ভিডিও চেঞ্জ করার জন্য তৈরি। এটি ব্যাকগ্রাউন্ডে চলবে। দয়া করে নিচের পারমিশনগুলো দিন:",
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(bottom = 32.dp)
+            text = "এই অ্যাপটি টিকটক (Asia/Global), YouTube Shorts, এবং Instagram Reels-এ হাতের ইশারা দিয়ে ভিডিও চেঞ্জ করার জন্য। এটি ব্যাকগ্রাউন্ডে চলবে এবং অন্য অ্যাপে গেলে অটো-অফ হবে।",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Spacer(Modifier.height(32.dp))
 
         Button(
             onClick = {
                 val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
                 context.startActivity(intent)
             },
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (hasOverlay) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+                containerColor = if (hasOverlay) MaterialTheme.colorScheme.surfaceVariant else PrimaryNeon,
+                contentColor = if (hasOverlay) Color.White else Color.Black
             )
         ) {
-            Text(if (hasOverlay) "১. ডিসপ্লে ওভারলে দেওয়া হয়েছে" else "১. ডিসপ্লে ওভারলে পারমিশন দিন")
+            Text(if (hasOverlay) "✔ ডিসপ্লে ওভারলে দেওয়া হয়েছে" else "১. ডিসপ্লে ওভারলে দিন")
         }
-
+        Spacer(Modifier.height(16.dp))
         Button(
             onClick = {
                 val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                 context.startActivity(intent)
             },
-            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (hasAccessibility) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+                containerColor = if (hasAccessibility) MaterialTheme.colorScheme.surfaceVariant else SecondaryNeon,
+                contentColor = Color.White
             )
         ) {
-            Text(if (hasAccessibility) "২. অ্যাক্সেসিবিলিটি সার্ভিস চালু করা হয়েছে" else "২. অ্যাক্সেসিবিলিটি সার্ভিস চালু করুন (WaveScroll)")
+            Text(if (hasAccessibility) "✔ অ্যাক্সেসিবিলিটি চালু হয়েছে" else "২. সার্ভসটি চালু করুন (WaveScroll)")
         }
     }
 }
