@@ -44,8 +44,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MyApplicationTheme {
                 Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    bottomBar = { AppBottomNav() }
+                    modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
                     MainScreen(modifier = Modifier.padding(innerPadding))
                 }
@@ -55,12 +54,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun AppBottomNav() {
+fun AppBottomNav(currentTab: Int, onTabSelected: (Int) -> Unit) {
     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-        NavigationBarItem(selected = true, onClick = {}, icon = { Text("⚙️") }, label = { Text("Settings") })
-        NavigationBarItem(selected = false, onClick = {}, icon = { Text("🖐") }, label = { Text("Gestures") })
-        NavigationBarItem(selected = false, onClick = {}, icon = { Text("▶️") }, label = { Text("Preview") })
-        NavigationBarItem(selected = false, onClick = {}, icon = { Text("ℹ️") }, label = { Text("About") })
+        NavigationBarItem(selected = currentTab == 0, onClick = { onTabSelected(0) }, icon = { Text("⚙️") }, label = { Text("Settings") })
+        NavigationBarItem(selected = currentTab == 1, onClick = { onTabSelected(1) }, icon = { Text("ℹ️") }, label = { Text("About") })
     }
 }
 
@@ -70,6 +67,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     var hasOverlay by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasAccessibility by remember { mutableStateOf(isAccessibilityEnabled(context)) }
     var hasAudioPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) }
+    var currentTab by remember { mutableStateOf(0) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -86,7 +84,15 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
 
     if (hasOverlay && hasAccessibility && hasAudioPermission) {
-        SettingsScreen(modifier = modifier)
+        Scaffold(
+            bottomBar = { AppBottomNav(currentTab, { currentTab = it }) }
+        ) { padding ->
+            if (currentTab == 0) {
+                SettingsScreen(modifier = modifier.padding(padding))
+            } else {
+                AboutScreen(modifier = modifier.padding(padding))
+            }
+        }
     } else {
         SetupScreen(
             modifier = modifier,
@@ -96,6 +102,37 @@ fun MainScreen(modifier: Modifier = Modifier) {
             onAudioPermissionGranted = { hasAudioPermission = true },
             context = context
         )
+    }
+}
+
+@Composable
+fun AboutScreen(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("About Developer", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = PrimaryNeon)
+        
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Name: Rakibul", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                Text("College: Kapilmuni College", fontSize = 16.sp)
+                Text("Location: Khulna, Bangladesh", fontSize = 16.sp)
+                Text("Email: mr4425390@gmail.com", fontSize = 16.sp, color = PrimaryNeon)
+            }
+        }
+        
+        Spacer(Modifier.height(16.dp))
+        
+        Text("App Details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("WaveScroll Pro\nCreated for immersive, touch-free scrolling on TikTok, YouTube Shorts, and Instagram Reels.\nThis version features live audio visualization and customizable smart gestures.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

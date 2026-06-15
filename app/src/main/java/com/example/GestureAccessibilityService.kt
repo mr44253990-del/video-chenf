@@ -26,6 +26,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.FrameLayout
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import kotlin.math.abs
@@ -51,6 +54,22 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     private var waveCount = 0
     private var longPressTriggered = false
     private val handler = Handler(Looper.getMainLooper())
+
+    private var isScreenOn = true
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    isScreenOn = false
+                    updateOverlayVisibility()
+                }
+                Intent.ACTION_USER_PRESENT -> {
+                    isScreenOn = true
+                    updateOverlayVisibility()
+                }
+            }
+        }
+    }
 
     private lateinit var prefs: SharedPreferences
 
@@ -102,6 +121,11 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         targetPackages = getSupportedApps()
 
+        registerReceiver(screenStateReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
+        })
+
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         proximitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY)
         proximitySensor?.let {
@@ -120,15 +144,23 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
                 targetPackages = getSupportedApps()
                 // Auto-hide disabled so the bubble is always visible:
                 isAppSupported = true 
-                
-                if (isAppSupported) {
-                    overlayRoot?.visibility = View.VISIBLE
-                    startAudioVisualizer()
-                } else {
-                    overlayRoot?.visibility = View.GONE
-                    stopAudioVisualizer()
-                }
+                updateOverlayVisibility()
                 updateOverlayText()
+            }
+        }
+    }
+
+    private fun updateOverlayVisibility() {
+        if (!isScreenOn) {
+            overlayRoot?.visibility = View.GONE
+            stopAudioVisualizer()
+        } else {
+            if (isAppSupported) {
+                overlayRoot?.visibility = View.VISIBLE
+                startAudioVisualizer()
+            } else {
+                overlayRoot?.visibility = View.GONE
+                stopAudioVisualizer()
             }
         }
     }
@@ -346,13 +378,18 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     private fun createControlButton(icon: String, label: String, onClick: () -> Unit): TextView {
         return TextView(this).apply {
             text = icon
-            textSize = 18f
-            setPadding(24, 20, 24, 20)
+            textSize = 20f
+            setPadding(32, 32, 32, 32)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#44FFFFFF"))
+                setColor(Color.parseColor("#99000000"))
             }
-            setOnClickListener { onClick() }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                onClick()
+                android.widget.Toast.makeText(context, "$label Option Activated", android.widget.Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -416,6 +453,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     }
 
     private fun performSwipeUp() {
+        visualizerView?.resetTimer()
         val displayMetrics = resources.displayMetrics
         val width = displayMetrics.widthPixels.toFloat()
         val height = displayMetrics.heightPixels.toFloat()
@@ -484,6 +522,9 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         super.onDestroy()
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         sensorManager.unregisterListener(this)
+        try {
+            unregisterReceiver(screenStateReceiver)
+        } catch (e: Exception) {}
         try {
             overlayRoot?.let { windowManager?.removeView(it) }
         } catch (e: Exception) {

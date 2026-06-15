@@ -57,6 +57,17 @@ class VisualizerBubbleView(context: Context) : View(context) {
     private var lastAudioTime = 0L
     private var displaySeconds = 0
 
+    private val drawPath = Path()
+    private val drawMatrix = Matrix()
+
+    fun resetTimer() {
+        trackStartTime = System.currentTimeMillis()
+        displaySeconds = 0
+        currentBpm = 0
+        beatIntervals.clear()
+        invalidate()
+    }
+
     fun updateVisualizer(fft: ByteArray?) {
         val currentTime = System.currentTimeMillis()
         if (fft == null || fft.isEmpty()) {
@@ -153,16 +164,16 @@ class VisualizerBubbleView(context: Context) : View(context) {
         canvas.drawCircle(cx, cy, baseRadius * 0.9f, textPaint)
         
         // Rotate gradient slowly
-        val matrix = Matrix()
-        matrix.postRotate(idlePhase * 15f, cx, cy)
+        drawMatrix.reset()
+        drawMatrix.postRotate(idlePhase * 15f, cx, cy)
         val sweepGradient = SweepGradient(cx, cy, colors, null)
-        sweepGradient.setLocalMatrix(matrix)
+        sweepGradient.setLocalMatrix(drawMatrix)
         
         paint.shader = sweepGradient
         glowPaint.shader = sweepGradient
         
         if (isPlaying) {
-            val path = Path()
+            drawPath.reset()
             val points = 60
             val angleStep = Math.PI * 2 / points
             
@@ -178,13 +189,13 @@ class VisualizerBubbleView(context: Context) : View(context) {
                 val x = cx + cos(angle).toFloat() * radius
                 val y = cy + sin(angle).toFloat() * radius
                 
-                if (i == 0) path.moveTo(x, y)
-                else path.lineTo(x, y)
+                if (i == 0) drawPath.moveTo(x, y)
+                else drawPath.lineTo(x, y)
             }
-            path.close()
+            drawPath.close()
             
-            canvas.drawPath(path, glowPaint)
-            canvas.drawPath(path, paint)
+            canvas.drawPath(drawPath, glowPaint)
+            canvas.drawPath(drawPath, paint)
             
             // Draw particles
             val iter = particles.iterator()
@@ -210,11 +221,11 @@ class VisualizerBubbleView(context: Context) : View(context) {
             val breath = (sin(idlePhase.toDouble()).toFloat() + 1f) / 2f
             val radius = baseRadius + breath * 6f
             
-            val path = Path()
-            path.addCircle(cx, cy, radius, Path.Direction.CW)
+            drawPath.reset()
+            drawPath.addCircle(cx, cy, radius, Path.Direction.CW)
             
-            canvas.drawPath(path, glowPaint)
-            canvas.drawPath(path, paint)
+            canvas.drawPath(drawPath, glowPaint)
+            canvas.drawPath(drawPath, paint)
             
             // clear particles in idle
             particles.clear()
