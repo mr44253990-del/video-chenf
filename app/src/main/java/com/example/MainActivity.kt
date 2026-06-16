@@ -227,7 +227,15 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         }
 
         // UI Settings
-        Text("Active Button UI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("Active Button & Dancer UI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        
+        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            var showDancer by remember { mutableStateOf(prefs.getBoolean("showDancer", true)) }
+            Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Show Virtual Assistant (Anime Dancer)", fontWeight = FontWeight.Medium)
+                Switch(checked = showDancer, onCheckedChange = { showDancer = it; prefs.edit().putBoolean("showDancer", it).apply() })
+            }
+        }
         
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Card(modifier = Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -251,6 +259,21 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         valueRange = 0.5f..2.0f
                     )
                 }
+            }
+        }
+        
+        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+           Column(Modifier.padding(16.dp)) {
+                Text("Virtual Assistant Size", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                var dancerScale by remember { androidx.compose.runtime.mutableFloatStateOf(prefs.getFloat("dancerScale", 1.0f)) }
+                androidx.compose.material3.Slider(
+                    value = dancerScale,
+                    onValueChange = { 
+                        dancerScale = it
+                        prefs.edit().putFloat("dancerScale", it).apply() 
+                    },
+                    valueRange = 0.5f..2.5f
+                )
             }
         }
         

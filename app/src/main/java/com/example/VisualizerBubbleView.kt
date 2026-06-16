@@ -57,6 +57,8 @@ class VisualizerBubbleView(context: Context) : View(context) {
     private var lastAudioTime = 0L
     private var displaySeconds = 0
 
+    var onBeatListener: (() -> Unit)? = null
+
     private val drawPath = Path()
     private val drawMatrix = Matrix()
 
@@ -111,6 +113,9 @@ class VisualizerBubbleView(context: Context) : View(context) {
                 }
                 lastBeatTime = currentTime
                 
+                // Invoke listener
+                onBeatListener?.invoke()
+
                 // Spawn particles on beat
                 spawnParticles(maxMag)
             }

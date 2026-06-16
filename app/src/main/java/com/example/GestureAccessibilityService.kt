@@ -46,6 +46,10 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     private var expandedControls: LinearLayout? = null
     private var isMenuExpanded = false
 
+    // Dancer UI
+    private var dancerOverlayRoot: FrameLayout? = null
+    private var dancerImageView: android.widget.ImageView? = null
+
     private var isPaused = false
     private var lastClickTime = 0L
 
@@ -153,13 +157,17 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     private fun updateOverlayVisibility() {
         if (!isScreenOn) {
             overlayRoot?.visibility = View.GONE
+            dancerOverlayRoot?.visibility = View.GONE
             stopAudioVisualizer()
         } else {
             if (isAppSupported) {
                 overlayRoot?.visibility = View.VISIBLE
+                val showDancer = prefs.getBoolean("showDancer", true)
+                dancerOverlayRoot?.visibility = if (showDancer) View.VISIBLE else View.GONE
                 startAudioVisualizer()
             } else {
                 overlayRoot?.visibility = View.GONE
+                dancerOverlayRoot?.visibility = View.GONE
                 stopAudioVisualizer()
             }
         }
@@ -258,6 +266,14 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         val visSize = (140 * density * scale).toInt()
         
         visualizerView = VisualizerBubbleView(this)
+        
+        visualizerView?.onBeatListener = {
+            if (dancerImageView != null && dancerImageView?.visibility == View.VISIBLE) {
+                dancerImageView?.animate()?.scaleX(1.15f)?.scaleY(1.15f)?.setDuration(50)?.withEndAction {
+                    dancerImageView?.animate()?.scaleX(1.0f)?.scaleY(1.0f)?.setDuration(150)?.start()
+                }?.start()
+            }
+        }
 
         bubbleContainer = FrameLayout(this).apply {
             addView(visualizerView, FrameLayout.LayoutParams(visSize, visSize, Gravity.CENTER))
@@ -373,6 +389,87 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         } catch (e: Exception) {
             e.printStackTrace()
         }
+        
+        setupDancerOverlay()
+    }
+    
+    private fun setupDancerOverlay() {
+        val density = resources.displayMetrics.density
+        val scale = prefs.getFloat("dancerScale", 1.0f)
+        val size = (150 * density * scale).toInt()
+        
+        dancerOverlayRoot = FrameLayout(this).apply {
+            val showDancer = prefs.getBoolean("showDancer", true)
+            visibility = if (isAppSupported && showDancer && isScreenOn) View.VISIBLE else View.GONE
+        }
+        
+        dancerImageView = android.widget.ImageView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(size, size * 2, Gravity.CENTER)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        }
+        
+        dancerOverlayRoot?.addView(dancerImageView)
+        
+        // Draggable logic for Dancer
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+
+        dancerOverlayRoot?.setOnTouchListener { _, event ->
+            val params = dancerOverlayRoot?.layoutParams as? WindowManager.LayoutParams
+            if (params == null) return@setOnTouchListener false
+
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = params.x
+                    initialY = params.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    params.x = initialX + (event.rawX - initialTouchX).toInt()
+                    params.y = initialY + (event.rawY - initialTouchY).toInt()
+                    windowManager?.updateViewLayout(dancerOverlayRoot, params)
+                    true
+                }
+                else -> false
+            }
+        }
+        
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.END
+            x = 50
+            y = 200
+        }
+        
+        try {
+            windowManager?.addView(dancerOverlayRoot, params)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
+        // Load and process image asynchronously
+        Thread {
+            try {
+                val bitmap = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.anime_dancer_1781574906468)
+                if (bitmap != null) {
+                    val transparentBitmap = ImageUtils.removeGreenScreen(bitmap)
+                    handler.post {
+                        dancerImageView?.setImageBitmap(transparentBitmap)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }.start()
     }
 
     private fun createControlButton(icon: String, label: String, onClick: () -> Unit): TextView {
@@ -405,6 +502,13 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         val visSize = (140 * density * scale).toInt()
         
         visualizerView?.layoutParams = FrameLayout.LayoutParams(visSize, visSize, Gravity.CENTER)
+        
+        val dScale = prefs.getFloat("dancerScale", 1.0f)
+        val dSize = (150 * density * dScale).toInt()
+        dancerImageView?.layoutParams = FrameLayout.LayoutParams(dSize, dSize * 2, Gravity.CENTER)
+        
+        val showDancer = prefs.getBoolean("showDancer", true)
+        dancerOverlayRoot?.visibility = if (isAppSupported && showDancer && isScreenOn) View.VISIBLE else View.GONE
     }
 
     private fun updateOverlaySettings() {
@@ -527,6 +631,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         } catch (e: Exception) {}
         try {
             overlayRoot?.let { windowManager?.removeView(it) }
+            dancerOverlayRoot?.let { windowManager?.removeView(it) }
         } catch (e: Exception) {
             e.printStackTrace()
         }
