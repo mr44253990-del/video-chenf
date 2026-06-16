@@ -10,8 +10,8 @@ import kotlin.random.Random
 
 class VisualizerBubbleView(context: Context) : View(context) {
     private var magnitudes = FloatArray(128)
-    private var waveform = ByteArray(0)
     private var isPlaying = false
+    private var idlePhase = 0f
     
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -22,7 +22,7 @@ class VisualizerBubbleView(context: Context) : View(context) {
     
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 18f
+        strokeWidth = 15f
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
         maskFilter = BlurMaskFilter(20f, BlurMaskFilter.Blur.NORMAL)
@@ -30,7 +30,7 @@ class VisualizerBubbleView(context: Context) : View(context) {
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textAlign = Paint.Align.RIGHT
+        textAlign = Paint.Align.CENTER
         typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
     }
 
@@ -38,7 +38,8 @@ class VisualizerBubbleView(context: Context) : View(context) {
         Color.parseColor("#FF0055"), // Pink
         Color.parseColor("#FFFF00"), // Yellow
         Color.parseColor("#00FF55"), // Green
-        Color.parseColor("#00FFFF")  // Cyan
+        Color.parseColor("#00FFFF"), // Cyan
+        Color.parseColor("#FF0055")
     )
 
     class Particle(var x: Float, var y: Float, var vx: Float, var vy: Float, var life: Float, var maxLife: Float, var color: Int, var size: Float)
@@ -56,6 +57,7 @@ class VisualizerBubbleView(context: Context) : View(context) {
     private var intensityMultiplier = 1f
 
     private val drawPath = Path()
+    private val drawMatrix = Matrix()
 
     fun resetTimer() {
         trackStartTime = System.currentTimeMillis()
@@ -63,12 +65,6 @@ class VisualizerBubbleView(context: Context) : View(context) {
         currentBpm = 0
         beatIntervals.clear()
         invalidate()
-    }
-
-    fun updateWaveform(wave: ByteArray?) {
-        if (wave != null) {
-            waveform = wave
-        }
     }
 
     fun updateFft(fft: ByteArray?) {
@@ -113,13 +109,11 @@ class VisualizerBubbleView(context: Context) : View(context) {
                     }
                 }
                 lastBeatTime = currentTime
-                intensityMultiplier = 2.0f
+                intensityMultiplier = 1.6f
                 onBeatListener?.invoke()
                 spawnParticles(maxMag, true)
-            } else {
-                if (Random.nextFloat() > 0.7f && maxMag > 30f) {
-                    spawnParticles(maxMag, false)
-                }
+            } else if (Random.nextFloat() > 0.8f && maxMag > 30f) {
+                spawnParticles(maxMag, false)
             }
         } else {
             if (currentTime - lastAudioTime > 2000) {
@@ -172,27 +166,44 @@ class VisualizerBubbleView(context: Context) : View(context) {
         
         drawPath.reset()
         
-        if (isPlaying && waveform.isNotEmpty()) {
-            val points = waveform.size
+        if (isPlaying) {
+            val points = 80
             val dx = w / (points - 1)
             
             for (i in 0 until points) {
-                val x = i * dx
-                val unsignedValue = waveform[i].toInt() and 0xFF
-                var amp = (unsignedValue - 128).toFloat()
+                val magIndex = (i * 2).coerceAtMost(magnitudes.size - 1)
+                var mag = magnitudes[magIndex] * 0.8f
+                mag = mag.coerceIn(0f, h * 0.4f) * intensityMultiplier
                 
-                amp *= (1.5f * intensityMultiplier)
-                val edgeFade = sin((i.toFloat() / points) * Math.PI).toFloat()
-                amp *= edgeFade
+                // Add an edge fade so it tapers off near the screen edges
+                val edgeFade = sin((i.toFloat() / (points - 1)) * Math.PI).toFloat()
+                mag *= edgeFade
                 
-                val y = cy - amp
+                // Make it oscillate up and down
+                val sign = if (i % 2 == 0) 1 else -1
+                val y = cy - (mag * sign)
                 
-                if (i == 0) drawPath.moveTo(x, y)
-                else drawPath.lineTo(x, y)
+                if (i == 0) drawPath.moveTo(0f, cy)
+                else drawPath.lineTo(i * dx, y)
             }
-        } else {
-            drawPath.moveTo(0f, cy)
+            // End gracefully
             drawPath.lineTo(w, cy)
+            
+        } else {
+            // Idle flat line / breathing line
+            idlePhase += 0.03f
+            val breath = (sin(idlePhase.toDouble()).toFloat()) * h * 0.05f
+            
+            val points = 80
+            val dx = w / (points - 1)
+            for (i in 0 until points) {
+                val edgeFade = sin((i.toFloat() / (points - 1)) * Math.PI).toFloat()
+                val sign = if (i % 2 == 0) 1 else -1
+                val y = cy - (breath * edgeFade * sign)
+                
+                if (i == 0) drawPath.moveTo(0f, cy)
+                else drawPath.lineTo(i * dx, y)
+            }
         }
         
         canvas.drawPath(drawPath, glowPaint)
@@ -215,10 +226,13 @@ class VisualizerBubbleView(context: Context) : View(context) {
             }
         }
         
+        idlePhase += 0.2f
+        
+        textPaint.color = Color.WHITE
+        textPaint.style = Paint.Style.FILL
+        textPaint.textAlign = Paint.Align.RIGHT
+        
         if (isPlaying || displaySeconds > 0) {
-            textPaint.color = Color.WHITE
-            textPaint.textAlign = Paint.Align.RIGHT
-            
             val rightMargin = w - 40f
             val baseTextY = h - 20f
             
@@ -238,10 +252,9 @@ class VisualizerBubbleView(context: Context) : View(context) {
             textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
             textPaint.color = Color.LTGRAY
             canvas.drawText("BPM", rightMargin - bpmWidth, baseTextY - 30f, textPaint)
+            
         }
         
-        if (isPlaying || particles.isNotEmpty()) {
-            postInvalidateOnAnimation()
-        }
+        postInvalidateOnAnimation()
     }
 }

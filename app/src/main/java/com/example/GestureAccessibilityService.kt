@@ -221,10 +221,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     }
 
     private fun animateBubbleScale(scale: Float) {
-        handler.post {
-            mainBubble?.scaleX = scale
-            mainBubble?.scaleY = scale
-        }
+        // removed scale for full width
     }
 
     private var dimView: View? = null
@@ -268,6 +265,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
 
         val density = resources.displayMetrics.density
         val scale = prefs.getFloat("bubbleScale", 1.0f)
+        val visSize = (140 * density * scale).toInt()
         
         visualizerView = VisualizerBubbleView(this)
         
@@ -302,22 +300,28 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             WindowManager.LayoutParams.MATCH_PARENT,
             (150 * density * scale).toInt(),
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.START
-            y = 50
+            y = 0 // Keep right at the bottom
         }
         try { windowManager?.addView(visualizerOverlayRoot, visParams) } catch (e: Exception) {}
 
+        visualizerView?.setOnClickListener {
+            isPaused = !isPaused
+            vibrate(50)
+            // If the user wants it to just close, perhaps we can stop everything or just pause.
+            // When paused, auto-scroll stops, which matches his intent to "close" it.
+        }
+
         mainBubble = TextView(this).apply {
-            text = "🖐"
-            setTextColor(Color.WHITE)
-            textSize = 24f
+            visibility = View.GONE
+            text = ""
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#E6000000"))
+                setColor(Color.TRANSPARENT)
             }
             layoutParams = LinearLayout.LayoutParams((60 * density).toInt(), (60 * density).toInt()).apply {
                 setMargins(8, 8, 8, 8)
@@ -360,19 +364,8 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
                         p.y = initialY + deltaY
                         windowManager?.updateViewLayout(overlayRoot, p)
                         
-                        // Sync Visualizer Y
-                        val vp = visualizerOverlayRoot?.layoutParams as? WindowManager.LayoutParams
-                        if (vp != null) {
-                            vp.y = p.y
-                            windowManager?.updateViewLayout(visualizerOverlayRoot, vp)
-                        }
-                        
-                        // Sync Dancer Y
-                        val dp = dancerOverlayRoot?.layoutParams as? WindowManager.LayoutParams
-                        if (dp != null) {
-                            dp.y = p.y + 150
-                            windowManager?.updateViewLayout(dancerOverlayRoot, dp)
-                        }
+                        // Sync Dancer Y (optional if user wants it draggable, else keep fixed)
+                        // Removed to keep dancer fixed on bottom
                     }
                     true
                 }
@@ -466,7 +459,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.BOTTOM or Gravity.START
+            gravity = Gravity.BOTTOM or Gravity.END
             x = 100
             y = 200 // Starts above visualizer
         }
@@ -553,7 +546,6 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     }
 
     private fun updateOverlayText() {
-        // Visualizer scale
         val scale = prefs.getFloat("bubbleScale", 1.0f)
         val density = resources.displayMetrics.density
         val visHeight = (150 * density * scale).toInt()
