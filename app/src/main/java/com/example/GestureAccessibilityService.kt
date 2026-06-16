@@ -32,6 +32,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import kotlin.math.abs
+import kotlin.math.sin
 
 class GestureAccessibilityService : AccessibilityService(), SensorEventListener {
 
@@ -40,8 +41,9 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     private var windowManager: WindowManager? = null
     
     // Bubble UI
-    private var overlayRoot: LinearLayout? = null
-    private var bubbleContainer: FrameLayout? = null
+    private var overlayRoot: LinearLayout? = null // For the Menu / Handle
+    private var visualizerOverlayRoot: FrameLayout? = null // Transparent full-width
+    private var mainBubble: TextView? = null
     private var visualizerView: VisualizerBubbleView? = null
     private var expandedControls: LinearLayout? = null
     private var isMenuExpanded = false
@@ -157,16 +159,19 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     private fun updateOverlayVisibility() {
         if (!isScreenOn) {
             overlayRoot?.visibility = View.GONE
+            visualizerOverlayRoot?.visibility = View.GONE
             dancerOverlayRoot?.visibility = View.GONE
             stopAudioVisualizer()
         } else {
             if (isAppSupported) {
                 overlayRoot?.visibility = View.VISIBLE
+                visualizerOverlayRoot?.visibility = View.VISIBLE
                 val showDancer = prefs.getBoolean("showDancer", true)
                 dancerOverlayRoot?.visibility = if (showDancer) View.VISIBLE else View.GONE
                 startAudioVisualizer()
             } else {
                 overlayRoot?.visibility = View.GONE
+                visualizerOverlayRoot?.visibility = View.GONE
                 dancerOverlayRoot?.visibility = View.GONE
                 stopAudioVisualizer()
             }
@@ -192,7 +197,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
                             }
                         }
                         override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, samplingRate: Int) {
-                            visualizerView?.updateVisualizer(fft)
+                            visualizerView?.updateFft(fft)
                         }
                     }, Visualizer.getMaxCaptureRate() / 2, false, true)
                     visualizer?.enabled = true
@@ -208,7 +213,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             visualizer?.enabled = false
             visualizer?.release()
             visualizer = null
-            visualizerView?.updateVisualizer(null)
+            visualizerView?.updateFft(null)
             animateBubbleScale(1f)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -217,8 +222,8 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
 
     private fun animateBubbleScale(scale: Float) {
         handler.post {
-            bubbleContainer?.scaleX = scale
-            bubbleContainer?.scaleY = scale
+            mainBubble?.scaleX = scale
+            mainBubble?.scaleY = scale
         }
     }
 
@@ -263,76 +268,118 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
 
         val density = resources.displayMetrics.density
         val scale = prefs.getFloat("bubbleScale", 1.0f)
-        val visSize = (140 * density * scale).toInt()
         
         visualizerView = VisualizerBubbleView(this)
         
         visualizerView?.onBeatListener = {
             if (dancerImageView != null && dancerImageView?.visibility == View.VISIBLE) {
-                dancerImageView?.animate()?.scaleX(1.15f)?.scaleY(1.15f)?.setDuration(50)?.withEndAction {
-                    dancerImageView?.animate()?.scaleX(1.0f)?.scaleY(1.0f)?.setDuration(150)?.start()
-                }?.start()
+                val currentScaleX = dancerImageView?.scaleX ?: 1f
+                val signX = if (currentScaleX < 0) -1f else 1f
+                // Intense jump and pump
+                dancerImageView?.animate()?.cancel()
+                dancerImageView?.animate()
+                    ?.scaleX(signX * 1.3f) 
+                    ?.scaleY(0.8f) // Squat
+                    ?.translationY(-80f) // Jump up
+                    ?.setDuration(50)
+                    ?.withEndAction {
+                        dancerImageView?.animate()
+                            ?.scaleX(signX * 1.0f)
+                            ?.scaleY(1f)
+                            ?.translationY(0f)
+                            ?.setDuration(150)
+                            ?.start()
+                    }?.start()
             }
         }
 
-        bubbleContainer = FrameLayout(this).apply {
-            addView(visualizerView, FrameLayout.LayoutParams(visSize, visSize, Gravity.CENTER))
+        visualizerOverlayRoot = FrameLayout(this).apply {
+            clipChildren = false
+            addView(visualizerView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        }
 
-            var clickDelay = 300L
-            var initialX = 0
-            var initialY = 0
-            var initialTouchX = 0f
-            var initialTouchY = 0f
+        val visParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            (150 * density * scale).toInt(),
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            y = 50
+        }
+        try { windowManager?.addView(visualizerOverlayRoot, visParams) } catch (e: Exception) {}
 
-            setOnTouchListener { _, event ->
-                val params = overlayRoot?.layoutParams as? WindowManager.LayoutParams
-                if (params == null) return@setOnTouchListener false
+        mainBubble = TextView(this).apply {
+            text = "🖐"
+            setTextColor(Color.WHITE)
+            textSize = 24f
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#E6000000"))
+            }
+            layoutParams = LinearLayout.LayoutParams((60 * density).toInt(), (60 * density).toInt()).apply {
+                setMargins(8, 8, 8, 8)
+            }
+        }
 
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        initialX = params.x
-                        initialY = params.y
-                        initialTouchX = event.rawX
-                        initialTouchY = event.rawY
-                        
-                        val clickTime = System.currentTimeMillis()
-                        if (clickTime - lastClickTime < clickDelay) {
-                            // Double tap
-                            isPaused = !isPaused
-                            updateOverlayText()
-                            vibrate(50)
-                            lastClickTime = 0L
-                        } else {
-                            lastClickTime = clickTime
-                        }
-                        true
+        var clickDelay = 300L
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+        var isDragging = false
+
+        mainBubble?.setOnTouchListener { _, event ->
+            val p = overlayRoot?.layoutParams as? WindowManager.LayoutParams
+            if (p == null) return@setOnTouchListener false
+
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = p.x
+                    initialY = p.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    isDragging = false
+                    
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastClickTime < clickDelay) {
+                        toggleMenu()
                     }
-                    MotionEvent.ACTION_MOVE -> {
-                        params.x = initialX + (event.rawX - initialTouchX).toInt()
-                        params.y = initialY + (event.rawY - initialTouchY).toInt()
-                        windowManager?.updateViewLayout(overlayRoot, params)
-                        true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        val diffX = event.rawX - initialTouchX
-                        val diffY = event.rawY - initialTouchY
-                        if (abs(diffX) < 10 && abs(diffY) < 10) {
-                            // Simple click
-                            if (System.currentTimeMillis() - lastClickTime < clickDelay) {
-                                // Waiting for double tap, maybe toggle menu, but we already handled double tap in down if it was fast enough
-                                // For single tap responsiveness, we might toggle menu here if not double clicked.
-                                handler.postDelayed({
-                                    if (lastClickTime != 0L) {
-                                        toggleMenu()
-                                        lastClickTime = 0L
-                                    }
-                                }, clickDelay)
-                            }
-                        }
-                        true
-                    }
-                    else -> false
+                    lastClickTime = currentTime
+                    true
                 }
+                MotionEvent.ACTION_MOVE -> {
+                    if (abs(event.rawX - initialTouchX) > 10 || abs(event.rawY - initialTouchY) > 10) {
+                        isDragging = true
+                    }
+                    if (isDragging) {
+                        val deltaY = (initialTouchY - event.rawY).toInt()
+                        p.x = initialX + (event.rawX - initialTouchX).toInt()
+                        p.y = initialY + deltaY
+                        windowManager?.updateViewLayout(overlayRoot, p)
+                        
+                        // Sync Visualizer Y
+                        val vp = visualizerOverlayRoot?.layoutParams as? WindowManager.LayoutParams
+                        if (vp != null) {
+                            vp.y = p.y
+                            windowManager?.updateViewLayout(visualizerOverlayRoot, vp)
+                        }
+                        
+                        // Sync Dancer Y
+                        val dp = dancerOverlayRoot?.layoutParams as? WindowManager.LayoutParams
+                        if (dp != null) {
+                            dp.y = p.y + 150
+                            windowManager?.updateViewLayout(dancerOverlayRoot, dp)
+                        }
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    true
+                }
+                else -> false
             }
         }
 
@@ -370,7 +417,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             addView(autoScrollBtn)
         }
 
-        overlayRoot?.addView(bubbleContainer)
+        overlayRoot?.addView(mainBubble)
         overlayRoot?.addView(expandedControls)
 
         val params = WindowManager.LayoutParams(
@@ -380,7 +427,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
+            gravity = Gravity.BOTTOM or Gravity.START
             x = 100
             y = 200
         }
@@ -410,52 +457,28 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         
         dancerOverlayRoot?.addView(dancerImageView)
         
-        // Draggable logic for Dancer
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
+        // Draggable logic for Dancer (removed manual drag, syncs with base)
 
-        dancerOverlayRoot?.setOnTouchListener { _, event ->
-            val params = dancerOverlayRoot?.layoutParams as? WindowManager.LayoutParams
-            if (params == null) return@setOnTouchListener false
-
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - initialTouchX).toInt()
-                    params.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager?.updateViewLayout(dancerOverlayRoot, params)
-                    true
-                }
-                else -> false
-            }
-        }
-        
-        val params = WindowManager.LayoutParams(
+        val dancerParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.BOTTOM or Gravity.END
-            x = 50
-            y = 200
+            gravity = Gravity.BOTTOM or Gravity.START
+            x = 100
+            y = 200 // Starts above visualizer
         }
         
         try {
-            windowManager?.addView(dancerOverlayRoot, params)
+            windowManager?.addView(dancerOverlayRoot, dancerParams)
         } catch (e: Exception) {
             e.printStackTrace()
         }
         
+        startDancerRoutine()
+
         // Load and process image asynchronously
         Thread {
             try {
@@ -470,6 +493,39 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
                 e.printStackTrace()
             }
         }.start()
+    }
+
+    private fun startDancerRoutine() {
+        val displayMetrics = resources.displayMetrics
+        val screenWidth = displayMetrics.widthPixels.toFloat()
+        val maxTranslateX = screenWidth / 2.5f
+        
+        val runAnim = object : Runnable {
+            var direction = 1f
+            var currentX = 0f
+            
+            override fun run() {
+                if (dancerImageView?.visibility == View.VISIBLE && !isPaused) {
+                    currentX += direction * 2f
+                    if (currentX > maxTranslateX) {
+                        direction = -1f
+                        dancerImageView?.scaleX = -(dancerImageView?.scaleX?.let { abs(it) } ?: 1f)
+                    } else if (currentX < -10f) { // don't go too far off screen left
+                        direction = 1f
+                        dancerImageView?.scaleX = (dancerImageView?.scaleX?.let { abs(it) } ?: 1f)
+                    }
+                    
+                    dancerImageView?.translationX = currentX
+                    val bob = sin((currentX / 20f).toDouble()).toFloat() * 10f
+                    // Only bob if we aren't currently jumping from a beat
+                    if (dancerImageView?.translationY?.compareTo(-40f)!! > 0) {
+                        dancerImageView?.translationY = bob
+                    }
+                }
+                handler.postDelayed(this, 30)
+            }
+        }
+        handler.post(runAnim)
     }
 
     private fun createControlButton(icon: String, label: String, onClick: () -> Unit): TextView {
@@ -497,12 +553,18 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     }
 
     private fun updateOverlayText() {
+        // Visualizer scale
         val scale = prefs.getFloat("bubbleScale", 1.0f)
         val density = resources.displayMetrics.density
-        val visSize = (140 * density * scale).toInt()
+        val visHeight = (150 * density * scale).toInt()
         
-        visualizerView?.layoutParams = FrameLayout.LayoutParams(visSize, visSize, Gravity.CENTER)
+        val vp = visualizerOverlayRoot?.layoutParams as? WindowManager.LayoutParams
+        if (vp != null) {
+            vp.height = visHeight
+            windowManager?.updateViewLayout(visualizerOverlayRoot, vp)
+        }
         
+        // Dancer scale
         val dScale = prefs.getFloat("dancerScale", 1.0f)
         val dSize = (150 * density * dScale).toInt()
         dancerImageView?.layoutParams = FrameLayout.LayoutParams(dSize, dSize * 2, Gravity.CENTER)
@@ -631,6 +693,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         } catch (e: Exception) {}
         try {
             overlayRoot?.let { windowManager?.removeView(it) }
+            visualizerOverlayRoot?.let { windowManager?.removeView(it) }
             dancerOverlayRoot?.let { windowManager?.removeView(it) }
         } catch (e: Exception) {
             e.printStackTrace()
