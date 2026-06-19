@@ -165,9 +165,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         } else {
             if (isAppSupported) {
                 overlayRoot?.visibility = View.VISIBLE
-                visualizerOverlayRoot?.visibility = View.VISIBLE
-                val showDancer = prefs.getBoolean("showDancer", true)
-                dancerOverlayRoot?.visibility = if (showDancer) View.VISIBLE else View.GONE
+                // visualizerOverlayRoot & dancerOverlayRoot are managed by onPlayingStateChanged
                 startAudioVisualizer()
             } else {
                 overlayRoot?.visibility = View.GONE
@@ -269,6 +267,19 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         
         visualizerView = VisualizerBubbleView(this)
         
+        visualizerView?.onPlayingStateChanged = { isPlaying ->
+            handler.post {
+                val showDancer = prefs.getBoolean("showDancer", true)
+                if (isPlaying) {
+                    visualizerOverlayRoot?.visibility = View.VISIBLE
+                    if (showDancer) dancerOverlayRoot?.visibility = View.VISIBLE
+                } else {
+                    visualizerOverlayRoot?.visibility = View.GONE
+                    dancerOverlayRoot?.visibility = View.GONE
+                }
+            }
+        }
+        
         visualizerView?.onBeatListener = {
             if (dancerImageView != null && dancerImageView?.visibility == View.VISIBLE) {
                 val currentScaleX = dancerImageView?.scaleX ?: 1f
@@ -292,6 +303,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         }
 
         visualizerOverlayRoot = FrameLayout(this).apply {
+            visibility = View.GONE
             clipChildren = false
             addView(visualizerView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         }
@@ -397,8 +409,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         val size = (150 * density * scale).toInt()
         
         dancerOverlayRoot = FrameLayout(this).apply {
-            val showDancer = prefs.getBoolean("showDancer", true)
-            visibility = if (isAppSupported && showDancer && isScreenOn) View.VISIBLE else View.GONE
+            visibility = View.GONE
         }
         
         dancerImageView = android.widget.ImageView(this).apply {
@@ -520,7 +531,8 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         dancerImageView?.layoutParams = FrameLayout.LayoutParams(dSize, dSize * 2, Gravity.CENTER)
         
         val showDancer = prefs.getBoolean("showDancer", true)
-        dancerOverlayRoot?.visibility = if (isAppSupported && showDancer && isScreenOn) View.VISIBLE else View.GONE
+        val isPlaying = visualizerView?.isPlaying ?: false
+        dancerOverlayRoot?.visibility = if (isAppSupported && showDancer && isScreenOn && isPlaying) View.VISIBLE else View.GONE
     }
 
     private fun updateOverlaySettings() {
@@ -529,6 +541,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (isPaused || !isAppSupported) return
+        if (!prefs.getBoolean("sensorEnabled", true)) return
 
         if (event?.sensor?.type == Sensor.TYPE_PROXIMITY) {
             val distance = event.values[0]
