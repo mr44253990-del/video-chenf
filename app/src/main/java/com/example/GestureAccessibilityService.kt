@@ -300,20 +300,13 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             WindowManager.LayoutParams.MATCH_PARENT,
             (150 * density * scale).toInt(),
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.START
             y = 0 // Keep right at the bottom
         }
         try { windowManager?.addView(visualizerOverlayRoot, visParams) } catch (e: Exception) {}
-
-        visualizerView?.setOnClickListener {
-            isPaused = !isPaused
-            vibrate(50)
-            // If the user wants it to just close, perhaps we can stop everything or just pause.
-            // When paused, auto-scroll stops, which matches his intent to "close" it.
-        }
 
         mainBubble = TextView(this).apply {
             visibility = View.GONE
@@ -376,42 +369,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             }
         }
 
-        expandedControls = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            visibility = View.GONE
-            setPadding(16, 0, 0, 0)
-            
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
-            var isMuted = false
-            val muteBtn = createControlButton("🔇", "Mute") {
-                isMuted = !isMuted
-                val direction = if (isMuted) android.media.AudioManager.ADJUST_MUTE else android.media.AudioManager.ADJUST_UNMUTE
-                audioManager.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, direction, android.media.AudioManager.FLAG_SHOW_UI)
-                vibrate(20)
-            }
-            
-            val brightnessBtn = createControlButton("🔆", "Dim") {
-                toggleDimMode()
-                vibrate(20)
-            }
-            
-            val autoScrollBtn = createControlButton("⏱️", "Auto") {
-                isAutoScrollEnabled = !isAutoScrollEnabled
-                if (isAutoScrollEnabled) {
-                    handler.postDelayed(autoScrollRunnable, 5000L)
-                } else {
-                    handler.removeCallbacks(autoScrollRunnable)
-                }
-                vibrate(20)
-            }
-            
-            addView(muteBtn)
-            addView(brightnessBtn)
-            addView(autoScrollBtn)
-        }
 
-        overlayRoot?.addView(mainBubble)
-        overlayRoot?.addView(expandedControls)
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,

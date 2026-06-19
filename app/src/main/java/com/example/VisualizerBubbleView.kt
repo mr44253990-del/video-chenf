@@ -135,7 +135,7 @@ class VisualizerBubbleView(context: Context) : View(context) {
     }
     
     private fun spawnParticles(intensity: Float, isBeat: Boolean) {
-        val yBase = height * 0.7f
+        val yBase = height - 80f
         val count = if (isBeat) Random.nextInt(15, 30) else Random.nextInt(2, 6)
         
         for (i in 0 until count) {
@@ -158,51 +158,66 @@ class VisualizerBubbleView(context: Context) : View(context) {
         
         val w = width.toFloat()
         val h = height.toFloat()
-        val cy = h * 0.7f
+        val cy = h - 80f // Near bottom
         
-        val linearGradient = LinearGradient(0f, cy - 50f, w, cy + 50f, colors, null, Shader.TileMode.CLAMP)
+        val linearGradient = LinearGradient(0f, cy - 80f, w, cy + 80f, colors, null, Shader.TileMode.CLAMP)
         paint.shader = linearGradient
         glowPaint.shader = linearGradient
         
         drawPath.reset()
         
         if (isPlaying) {
-            val points = 80
+            val points = 60
             val dx = w / (points - 1)
             
-            for (i in 0 until points) {
-                val magIndex = (i * 2).coerceAtMost(magnitudes.size - 1)
-                var mag = magnitudes[magIndex] * 0.8f
-                mag = mag.coerceIn(0f, h * 0.4f) * intensityMultiplier
+            drawPath.moveTo(0f, cy)
+            var prevX = 0f
+            var prevY = cy
+            
+            for (i in 1 until points) {
+                // Better mapping of magnitude
+                val magIndex = (i * magnitudes.size / points).coerceIn(0, magnitudes.size - 1)
+                var mag = magnitudes[magIndex] * 1.5f
+                mag = mag.coerceIn(0f, h * 0.6f) * intensityMultiplier
                 
-                // Add an edge fade so it tapers off near the screen edges
                 val edgeFade = sin((i.toFloat() / (points - 1)) * Math.PI).toFloat()
                 mag *= edgeFade
                 
-                // Make it oscillate up and down
-                val sign = if (i % 2 == 0) 1 else -1
+                val sign = if (i % 2 == 0) 1 else -1 // Creates the up/down jaggedness characteristic of this type of visualizer
+                val x = i * dx
                 val y = cy - (mag * sign)
                 
-                if (i == 0) drawPath.moveTo(0f, cy)
-                else drawPath.lineTo(i * dx, y)
+                // Smooth curve
+                val cx = (prevX + x) / 2f
+                drawPath.cubicTo(cx, prevY, cx, y, x, y)
+                
+                prevX = x
+                prevY = y
             }
-            // End gracefully
-            drawPath.lineTo(w, cy)
             
         } else {
             // Idle flat line / breathing line
-            idlePhase += 0.03f
-            val breath = (sin(idlePhase.toDouble()).toFloat()) * h * 0.05f
+            idlePhase += 0.04f
+            val breath = (sin(idlePhase.toDouble()).toFloat()) * h * 0.03f
             
-            val points = 80
+            val points = 40
             val dx = w / (points - 1)
-            for (i in 0 until points) {
+            
+            drawPath.moveTo(0f, cy)
+            var prevX = 0f
+            var prevY = cy
+            
+            for (i in 1 until points) {
                 val edgeFade = sin((i.toFloat() / (points - 1)) * Math.PI).toFloat()
                 val sign = if (i % 2 == 0) 1 else -1
+                val x = i * dx
                 val y = cy - (breath * edgeFade * sign)
                 
-                if (i == 0) drawPath.moveTo(0f, cy)
-                else drawPath.lineTo(i * dx, y)
+                val cx = (prevX + x) / 2f
+                drawPath.cubicTo(cx, prevY, cx, y, x, y)
+                
+                prevX = x
+                prevY = y
             }
         }
         
