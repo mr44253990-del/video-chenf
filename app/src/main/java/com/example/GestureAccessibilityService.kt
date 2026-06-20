@@ -31,6 +31,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import coil.load
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
+import android.net.Uri
+import java.io.File
 import kotlin.math.abs
 import kotlin.math.sin
 
@@ -252,9 +257,24 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         }
     }
 
+    private var flashOverlayRoot: FrameLayout? = null
+
     private fun setupOverlay() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         
+        flashOverlayRoot = FrameLayout(this).apply {
+            visibility = View.GONE
+            setBackgroundColor(Color.parseColor("#44FFFFFF")) // Semi-transparent white flash
+        }
+        val flashParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        )
+        try { windowManager?.addView(flashOverlayRoot, flashParams) } catch (e: Exception) {}
+
         overlayRoot = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -299,6 +319,17 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
                             ?.setDuration(150)
                             ?.start()
                     }?.start()
+            }
+        }
+
+        visualizerView?.onDropListener = {
+            handler.post {
+                flashOverlayRoot?.visibility = View.VISIBLE
+                flashOverlayRoot?.alpha = 1f
+                flashOverlayRoot?.animate()?.alpha(0f)?.setDuration(300)?.withEndAction {
+                    flashOverlayRoot?.visibility = View.GONE
+                }?.start()
+                vibrate(150)
             }
         }
 
@@ -441,20 +472,27 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         
         startDancerRoutine()
 
-        // Load and process image asynchronously
-        Thread {
-            try {
-                val bitmap = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.anime_dancer_1781574906468)
-                if (bitmap != null) {
-                    val transparentBitmap = ImageUtils.removeGreenScreen(bitmap)
-                    handler.post {
-                        dancerImageView?.setImageBitmap(transparentBitmap)
-                    }
+        loadDancerImage()
+    }
+
+    private var currentGifPath: String? = null
+
+    private fun loadDancerImage() {
+        val customGifPath = prefs.getString("customGifPath", null)
+        if (customGifPath == currentGifPath && dancerImageView?.drawable != null) return
+        currentGifPath = customGifPath
+        val imageFile = if (customGifPath != null) File(customGifPath) else null
+
+        dancerImageView?.load(imageFile ?: R.drawable.anime_dancer_1781574906468) {
+            decoderFactory { result, options, _ ->
+                if (android.os.Build.VERSION.SDK_INT >= 28) {
+                    ImageDecoderDecoder(result.source, options)
+                } else {
+                    GifDecoder(result.source, options)
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
-        }.start()
+            crossfade(true)
+        }
     }
 
     private fun startDancerRoutine() {
@@ -468,7 +506,10 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             
             override fun run() {
                 if (dancerImageView?.visibility == View.VISIBLE && !isPaused) {
-                    currentX += direction * 2f
+                    val bpm = visualizerView?.currentBpm ?: 0
+                    val speedMultiplier = if (bpm > 0) (bpm / 120f).coerceIn(0.5f, 2.0f) else 1f
+                    currentX += direction * 2f * speedMultiplier
+                    
                     if (currentX > maxTranslateX) {
                         direction = -1f
                         dancerImageView?.scaleX = -(dancerImageView?.scaleX?.let { abs(it) } ?: 1f)
@@ -537,6 +578,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
 
     private fun updateOverlaySettings() {
         updateOverlayText()
+        loadDancerImage()
     }
 
     override fun onSensorChanged(event: SensorEvent?) {

@@ -149,6 +149,20 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var btnColor by remember { mutableStateOf(prefs.getString("btnColor", "Green/Red") ?: "Green/Red") }
     var btnSize by remember { mutableStateOf(prefs.getString("btnSize", "Medium") ?: "Medium") }
     var btnPosition by remember { mutableStateOf(prefs.getString("btnPosition", "Top-End") ?: "Top-End") }
+    
+    var customGifPath by remember { mutableStateOf(prefs.getString("customGifPath", null)) }
+    val gifPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val file = java.io.File(context.filesDir, "custom_dancer.gif")
+            val outputStream = java.io.FileOutputStream(file)
+            inputStream?.copyTo(outputStream)
+            inputStream?.close()
+            outputStream.close()
+            prefs.edit().putString("customGifPath", file.absolutePath).apply()
+            customGifPath = file.absolutePath
+        }
+    }
 
     Column(
         modifier = modifier
@@ -227,13 +241,43 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         }
 
         // UI Settings
-        Text("Active Button & Dancer UI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("Dancer & Sensor UI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         
         Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-            var showDancer by remember { mutableStateOf(prefs.getBoolean("showDancer", true)) }
-            Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Show Virtual Assistant (Anime Dancer)", fontWeight = FontWeight.Medium)
-                Switch(checked = showDancer, onCheckedChange = { showDancer = it; prefs.edit().putBoolean("showDancer", it).apply() })
+            Column {
+                var showDancer by remember { mutableStateOf(prefs.getBoolean("showDancer", true)) }
+                Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Show Virtual Assistant (Anime)", fontWeight = FontWeight.Medium)
+                    Switch(checked = showDancer, onCheckedChange = { showDancer = it; prefs.edit().putBoolean("showDancer", it).apply() })
+                }
+                
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = { gifPickerLauncher.launch("image/gif") }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                        Text(if (customGifPath == null) "Upload Custom GIF" else "Change Custom GIF", color = PrimaryNeon)
+                    }
+                    if (customGifPath != null) {
+                        TextButton(onClick = {
+                            customGifPath = null
+                            prefs.edit().remove("customGifPath").apply()
+                        }) {
+                            Text("Reset", color = Color.Red)
+                        }
+                    }
+                }
+                
+                var sensorEnabled by remember { mutableStateOf(prefs.getBoolean("sensorEnabled", true)) }
+                Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Enable Hand Gestures (Sensor)", fontWeight = FontWeight.Medium)
+                    Switch(checked = sensorEnabled, onCheckedChange = { sensorEnabled = it; prefs.edit().putBoolean("sensorEnabled", it).apply() })
+                }
+                
+                var visStyle by remember { mutableStateOf(prefs.getString("visualizerStyle", "Wave") ?: "Wave") }
+                Column(Modifier.padding(16.dp)) {
+                    Text("Visualizer Style", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    SettingDropdown("", visStyle, listOf("Wave", "Bars", "Circle")) { 
+                        visStyle = it; prefs.edit().putString("visualizerStyle", it).apply() 
+                    }
+                }
             }
         }
         

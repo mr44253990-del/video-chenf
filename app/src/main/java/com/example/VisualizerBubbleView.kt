@@ -10,8 +10,16 @@ import kotlin.random.Random
 
 class VisualizerBubbleView(context: Context) : View(context) {
     private var magnitudes = FloatArray(128)
-    private var isPlaying = false
+    var isPlaying = false
+        private set(value) {
+            if (field != value) {
+                field = value
+                onPlayingStateChanged?.invoke(value)
+            }
+        }
     private var idlePhase = 0f
+    
+    var onPlayingStateChanged: ((Boolean) -> Unit)? = null
     
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -35,12 +43,24 @@ class VisualizerBubbleView(context: Context) : View(context) {
     }
 
     private val colors = intArrayOf(
-        Color.parseColor("#FF0055"), // Pink
-        Color.parseColor("#FFFF00"), // Yellow
-        Color.parseColor("#00FF55"), // Green
-        Color.parseColor("#00FFFF"), // Cyan
+        Color.parseColor("#FF0055"),
+        Color.parseColor("#FFFF00"),
+        Color.parseColor("#00FF55"),
+        Color.parseColor("#00FFFF"),
         Color.parseColor("#FF0055")
     )
+    
+    private fun randomizeColors() {
+        val hsv = FloatArray(3)
+        hsv[1] = 1f // saturation
+        hsv[2] = 1f // value
+        val baseHue = Random.nextFloat() * 360f
+        
+        for (i in colors.indices) {
+            hsv[0] = (baseHue + i * 40f) % 360f
+            colors[i] = Color.HSVToColor(hsv)
+        }
+    }
 
     class Particle(var x: Float, var y: Float, var vx: Float, var vy: Float, var life: Float, var maxLife: Float, var color: Int, var size: Float)
     private val particles = mutableListOf<Particle>()
@@ -48,12 +68,16 @@ class VisualizerBubbleView(context: Context) : View(context) {
 
     private var lastBeatTime = 0L
     private val beatIntervals = mutableListOf<Long>()
-    private var currentBpm = 0
+    var currentBpm = 0
+        private set
+
     private var trackStartTime = 0L
     private var lastAudioTime = 0L
     private var displaySeconds = 0
 
     var onBeatListener: (() -> Unit)? = null
+    var onDropListener: (() -> Unit)? = null
+    private var lastDropTime = 0L
     private var intensityMultiplier = 1f
 
     private val drawPath = Path()
@@ -112,6 +136,12 @@ class VisualizerBubbleView(context: Context) : View(context) {
                 intensityMultiplier = 1.6f
                 onBeatListener?.invoke()
                 spawnParticles(maxMag, true)
+                
+                if (maxMag > 85f && currentTime - lastDropTime > 2000) {
+                    lastDropTime = currentTime
+                    randomizeColors()
+                    onDropListener?.invoke()
+                }
             } else if (Random.nextFloat() > 0.8f && maxMag > 30f) {
                 spawnParticles(maxMag, false)
             }
@@ -160,70 +190,23 @@ class VisualizerBubbleView(context: Context) : View(context) {
         val h = height.toFloat()
         val cy = h - 80f // Near bottom
         
+        val prefs = context.getSharedPreferences("WaveScrollPrefs", Context.MODE_PRIVATE)
+        val style = prefs.getString("visualizerStyle", "Wave") ?: "Wave"
+
         val linearGradient = LinearGradient(0f, cy - 80f, w, cy + 80f, colors, null, Shader.TileMode.CLAMP)
         paint.shader = linearGradient
         glowPaint.shader = linearGradient
         
         drawPath.reset()
         
-        if (isPlaying) {
-            val points = 60
-            val dx = w / (points - 1)
-            
-            drawPath.moveTo(0f, cy)
-            var prevX = 0f
-            var prevY = cy
-            
-            for (i in 1 until points) {
-                // Better mapping of magnitude
-                val magIndex = (i * magnitudes.size / points).coerceIn(0, magnitudes.size - 1)
-                var mag = magnitudes[magIndex] * 1.5f
-                mag = mag.coerceIn(0f, h * 0.6f) * intensityMultiplier
-                
-                val edgeFade = sin((i.toFloat() / (points - 1)) * Math.PI).toFloat()
-                mag *= edgeFade
-                
-                val sign = if (i % 2 == 0) 1 else -1 // Creates the up/down jaggedness characteristic of this type of visualizer
-                val x = i * dx
-                val y = cy - (mag * sign)
-                
-                // Smooth curve
-                val cx = (prevX + x) / 2f
-                drawPath.cubicTo(cx, prevY, cx, y, x, y)
-                
-                prevX = x
-                prevY = y
-            }
-            
-        } else {
-            // Idle flat line / breathing line
-            idlePhase += 0.04f
-            val breath = (sin(idlePhase.toDouble()).toFloat()) * h * 0.03f
-            
-            val points = 40
-            val dx = w / (points - 1)
-            
-            drawPath.moveTo(0f, cy)
-            var prevX = 0f
-            var prevY = cy
-            
-            for (i in 1 until points) {
-                val edgeFade = sin((i.toFloat() / (points - 1)) * Math.PI).toFloat()
-                val sign = if (i % 2 == 0) 1 else -1
-                val x = i * dx
-                val y = cy - (breath * edgeFade * sign)
-                
-                val cx = (prevX + x) / 2f
-                drawPath.cubicTo(cx, prevY, cx, y, x, y)
-                
-                prevX = x
-                prevY = y
-            }
+        if (style == "Wave") {
+            drawWave(canvas, w, h, cy, linearGradient)
+        } else if (style == "Bars") {
+            drawBars(canvas, w, h, cy, linearGradient)
+        } else if (style == "Circle") {
+            drawCircle(canvas, w, h, cy)
         }
-        
-        canvas.drawPath(drawPath, glowPaint)
-        canvas.drawPath(drawPath, paint)
-        
+
         val iter = particles.iterator()
         while(iter.hasNext()) {
             val p = iter.next()
@@ -270,6 +253,106 @@ class VisualizerBubbleView(context: Context) : View(context) {
             
         }
         
+        postInvalidateOnAnimation()
+    }
+    
+    private fun drawWave(canvas: Canvas, w: Float, h: Float, cy: Float, gradient: LinearGradient) {
+        if (isPlaying) {
+            val points = 60
+            val dx = w / (points - 1)
+            
+            drawPath.moveTo(0f, cy)
+            var prevX = 0f
+            var prevY = cy
+            
+            for (i in 1 until points) {
+                val magIndex = (i * magnitudes.size / points).coerceIn(0, magnitudes.size - 1)
+                var mag = magnitudes[magIndex] * 1.5f
+                mag = mag.coerceIn(0f, h * 0.6f) * intensityMultiplier
+                
+                val edgeFade = sin((i.toFloat() / (points - 1)) * Math.PI).toFloat()
+                mag *= edgeFade
+                
+                val sign = if (i % 2 == 0) 1 else -1
+                val x = i * dx
+                val y = cy - (mag * sign)
+                
+                val cx = (prevX + x) / 2f
+                drawPath.cubicTo(cx, prevY, cx, y, x, y)
+                
+                prevX = x
+                prevY = y
+            }
+        } else {
+            idlePhase += 0.04f
+            val breath = (sin(idlePhase.toDouble()).toFloat()) * h * 0.03f
+            
+            val points = 40
+            val dx = w / (points - 1)
+            
+            drawPath.moveTo(0f, cy)
+            var prevX = 0f
+            var prevY = cy
+            
+            for (i in 1 until points) {
+                val edgeFade = sin((i.toFloat() / (points - 1)) * Math.PI).toFloat()
+                val sign = if (i % 2 == 0) 1 else -1
+                val x = i * dx
+                val y = cy - (breath * edgeFade * sign)
+                
+                val cx = (prevX + x) / 2f
+                drawPath.cubicTo(cx, prevY, cx, y, x, y)
+                
+                prevX = x
+                prevY = y
+            }
+        }
+        canvas.drawPath(drawPath, glowPaint)
+        canvas.drawPath(drawPath, paint)
+    }
+
+    private fun drawBars(canvas: Canvas, w: Float, h: Float, cy: Float, gradient: LinearGradient) {
+        val count = 20
+        val barWidth = w / count * 0.6f
+        val gap = w / count * 0.4f
+        for (i in 0 until count) {
+            val magIndex = (i * magnitudes.size / count).coerceIn(0, magnitudes.size - 1)
+            var mag = if (isPlaying) magnitudes[magIndex] * 1.5f * intensityMultiplier else 5f
+            mag = mag.coerceIn(5f, h * 0.5f)
+            val px = i * (barWidth + gap) + gap/2
+            canvas.drawRoundRect(px, cy - mag, px + barWidth, cy, 10f, 10f, glowPaint)
+            canvas.drawRoundRect(px, cy - mag, px + barWidth, cy, 10f, 10f, paint)
+        }
+    }
+
+    private fun drawCircle(canvas: Canvas, w: Float, h: Float, cy: Float) {
+        val cx = w / 2
+        val radius = 80f
+        
+        val radialGradient = RadialGradient(cx, cy - radius, radius * 2, colors, null, Shader.TileMode.CLAMP)
+        paint.shader = radialGradient
+        glowPaint.shader = radialGradient
+        
+        drawPath.reset()
+        val count = 60
+        val angleStep = Math.PI * 2 / count
+        
+        for (i in 0..count) {
+            val angle = i * angleStep
+            val innerSize = radius + if (!isPlaying) sin(idlePhase).toFloat() * 5f else 0f
+            val magIndex = (i * magnitudes.size / count).coerceIn(0, magnitudes.size - 1)
+            var mag = if (isPlaying) magnitudes[magIndex] * 1.5f * intensityMultiplier else 0f
+            mag = mag.coerceIn(0f, h * 0.4f)
+            
+            val r = innerSize + mag
+            val x = cx + cos(angle).toFloat() * r
+            val y = (cy - radius) + sin(angle).toFloat() * r
+            
+            if (i == 0) drawPath.moveTo(x, y)
+            else drawPath.lineTo(x, y)
+        }
+        canvas.drawPath(drawPath, glowPaint)
+        canvas.drawPath(drawPath, paint)
         postInvalidateOnAnimation()
     }
 }
