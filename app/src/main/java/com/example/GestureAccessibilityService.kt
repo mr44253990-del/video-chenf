@@ -53,6 +53,9 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     private var expandedControls: LinearLayout? = null
     private var isMenuExpanded = false
 
+    private var bassBoost: android.media.audiofx.BassBoost? = null
+    private var loudnessEnhancer: android.media.audiofx.LoudnessEnhancer? = null
+
     // Dancer UI
     private var dancerOverlayRoot: FrameLayout? = null
     private var dancerImageView: android.widget.ImageView? = null
@@ -204,6 +207,22 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
                         }
                     }, Visualizer.getMaxCaptureRate() / 2, false, true)
                     visualizer?.enabled = true
+                    
+                    val audioEnhance = prefs.getBoolean("audioEnhance", false)
+                    if (audioEnhance) {
+                        try {
+                            if (bassBoost == null) bassBoost = android.media.audiofx.BassBoost(0, 0)
+                            if (bassBoost?.strengthSupported == true) bassBoost?.setStrength(1000)
+                            bassBoost?.enabled = true
+                        } catch (e: Exception) {}
+                        try {
+                            if (loudnessEnhancer == null) loudnessEnhancer = android.media.audiofx.LoudnessEnhancer(0)
+                            loudnessEnhancer?.setTargetGain(1500)
+                            loudnessEnhancer?.enabled = true
+                        } catch(e: Exception){}
+                    } else {
+                        stopAudioEffects()
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -211,7 +230,21 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         }
     }
 
+    private fun stopAudioEffects() {
+        try {
+            bassBoost?.enabled = false
+            bassBoost?.release()
+            bassBoost = null
+        } catch (e: Exception) {}
+        try {
+            loudnessEnhancer?.enabled = false
+            loudnessEnhancer?.release()
+            loudnessEnhancer = null
+        } catch (e: Exception) {}
+    }
+
     private fun stopAudioVisualizer() {
+        stopAudioEffects()
         try {
             visualizer?.enabled = false
             visualizer?.release()
@@ -274,10 +307,9 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         
         visualizerView?.onPlayingStateChanged = { isPlaying ->
             handler.post {
-                val showDancer = prefs.getBoolean("showDancer", true)
                 if (isPlaying) {
                     visualizerOverlayRoot?.visibility = View.VISIBLE
-                    if (showDancer) dancerOverlayRoot?.visibility = View.VISIBLE
+                    dancerOverlayRoot?.visibility = View.VISIBLE
                 } else {
                     visualizerOverlayRoot?.visibility = View.GONE
                     dancerOverlayRoot?.visibility = View.GONE
@@ -585,7 +617,11 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             override fun run() {
                 if (dancerImageView?.visibility == View.VISIBLE && !isPaused) {
                     val bpm = visualizerView?.currentBpm ?: 0
-                    val speedMultiplier = if (bpm > 0) (bpm / 120f).coerceIn(0.5f, 2.0f) else 1f
+                    var speedMultiplier = if (bpm > 0) (bpm / 120f).coerceIn(0.5f, 2.0f) else 1f
+                    
+                    val userSpeed = prefs.getFloat("dancerSpeed", 1.0f)
+                    speedMultiplier *= userSpeed
+                    
                     currentX += direction * 2f * speedMultiplier
                     
                     if (currentX > maxTranslateX) {
@@ -649,9 +685,8 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         val dSize = (150 * density * dScale).toInt()
         dancerImageView?.layoutParams = FrameLayout.LayoutParams(dSize, dSize * 2, Gravity.CENTER)
         
-        val showDancer = prefs.getBoolean("showDancer", true)
         val isPlaying = visualizerView?.isPlaying ?: false
-        dancerOverlayRoot?.visibility = if (isAppSupported && showDancer && isScreenOn && isPlaying) View.VISIBLE else View.GONE
+        dancerOverlayRoot?.visibility = if (isAppSupported && isScreenOn && isPlaying) View.VISIBLE else View.GONE
     }
 
     private fun updateOverlaySettings() {

@@ -104,6 +104,8 @@ class VisualizerBubbleView(context: Context) : View(context) {
         }
         
         var maxMag = 0f
+        var bassMag = 0f
+        var midMag = 0f
         val n = Math.min(fft.size / 2, 128)
         for (i in 0 until n) {
             val real = fft[i * 2].toFloat()
@@ -111,18 +113,19 @@ class VisualizerBubbleView(context: Context) : View(context) {
             val mag = kotlin.math.sqrt(real * real + imag * imag)
             magnitudes[i] = mag
             if (mag > maxMag) maxMag = mag
+            if (i < 15 && mag > bassMag) bassMag = mag
+            if (i in 15..50 && mag > midMag) midMag = mag
         }
         
-        if (maxMag > 15f) {
-            if (!isPlaying || trackStartTime == 0L) {
-                isPlaying = true
-                trackStartTime = currentTime
-                beatIntervals.clear()
-            }
+        // Music typically has strong bass/wide spectrum compared to speech which is mostly mid-range.
+        // Require strong signal and some bass component to activate "music" mode
+        val isMusicLike = maxMag > 40f && (bassMag > 35f || midMag > 50f)
+        
+        if (isMusicLike) {
             lastAudioTime = currentTime
             
             // Beat detection
-            if (maxMag > 60f && currentTime - lastBeatTime > 350) {
+            if (bassMag > 65f && currentTime - lastBeatTime > 350) {
                 if (lastBeatTime > 0) {
                     val interval = currentTime - lastBeatTime
                     if (interval < 2000) {
@@ -134,19 +137,30 @@ class VisualizerBubbleView(context: Context) : View(context) {
                 }
                 lastBeatTime = currentTime
                 intensityMultiplier = 1.6f
-                onBeatListener?.invoke()
-                spawnParticles(maxMag, true)
                 
-                if (maxMag > 85f && currentTime - lastDropTime > 2000) {
-                    lastDropTime = currentTime
-                    randomizeColors()
-                    onDropListener?.invoke()
+                if (isPlaying) {
+                    onBeatListener?.invoke()
+                    spawnParticles(bassMag, true)
+                    
+                    if (bassMag > 90f && currentTime - lastDropTime > 2000) {
+                        lastDropTime = currentTime
+                        randomizeColors()
+                        onDropListener?.invoke()
+                    }
                 }
-            } else if (Random.nextFloat() > 0.8f && maxMag > 30f) {
+            } else if (isPlaying && Random.nextFloat() > 0.8f && maxMag > 30f) {
                 spawnParticles(maxMag, false)
             }
+            
+            // Only consider it 'Music' passing through if we've detected some rhythmic beats
+            if (beatIntervals.size >= 2) {
+                if (!isPlaying || trackStartTime == 0L) {
+                    isPlaying = true
+                    trackStartTime = currentTime
+                }
+            }
         } else {
-            if (currentTime - lastAudioTime > 2000) {
+            if (currentTime - lastAudioTime > 2500) {
                 isPlaying = false
                 currentBpm = 0
                 trackStartTime = 0L

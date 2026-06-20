@@ -245,12 +245,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         
         Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column {
-                var showDancer by remember { mutableStateOf(prefs.getBoolean("showDancer", true)) }
-                Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Show Virtual Assistant (Anime)", fontWeight = FontWeight.Medium)
-                    Switch(checked = showDancer, onCheckedChange = { showDancer = it; prefs.edit().putBoolean("showDancer", it).apply() })
-                }
-                
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Button(onClick = { gifPickerLauncher.launch("image/gif") }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                         Text(if (customGifPath == null) "Upload Custom GIF" else "Change Custom GIF", color = PrimaryNeon)
@@ -263,6 +257,22 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             Text("Reset", color = Color.Red)
                         }
                     }
+                }
+                
+                var dancerSpeed by remember { mutableStateOf(prefs.getFloat("dancerSpeed", 1.0f)) }
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text("Dancer Details (Speed)", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Slider(
+                        value = dancerSpeed,
+                        onValueChange = { dancerSpeed = it; prefs.edit().putFloat("dancerSpeed", it).apply() },
+                        valueRange = 0.1f..5.0f
+                    )
+                }
+
+                var audioEnhance by remember { mutableStateOf(prefs.getBoolean("audioEnhance", false)) }
+                Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Extreme Bass & Clear Audio Focus", fontWeight = FontWeight.Medium)
+                    Switch(checked = audioEnhance, onCheckedChange = { audioEnhance = it; prefs.edit().putBoolean("audioEnhance", it).apply() })
                 }
                 
                 var sensorEnabled by remember { mutableStateOf(prefs.getBoolean("sensorEnabled", true)) }
