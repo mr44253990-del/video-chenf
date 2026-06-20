@@ -257,24 +257,9 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         }
     }
 
-    private var flashOverlayRoot: FrameLayout? = null
-
     private fun setupOverlay() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         
-        flashOverlayRoot = FrameLayout(this).apply {
-            visibility = View.GONE
-            setBackgroundColor(Color.parseColor("#44FFFFFF")) // Semi-transparent white flash
-        }
-        val flashParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        )
-        try { windowManager?.addView(flashOverlayRoot, flashParams) } catch (e: Exception) {}
-
         overlayRoot = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -319,17 +304,6 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
                             ?.setDuration(150)
                             ?.start()
                     }?.start()
-            }
-        }
-
-        visualizerView?.onDropListener = {
-            handler.post {
-                flashOverlayRoot?.visibility = View.VISIBLE
-                flashOverlayRoot?.alpha = 1f
-                flashOverlayRoot?.animate()?.alpha(0f)?.setDuration(300)?.withEndAction {
-                    flashOverlayRoot?.visibility = View.GONE
-                }?.start()
-                vibrate(150)
             }
         }
 
@@ -491,7 +465,7 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.END
@@ -537,19 +511,9 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
     }
 
     private fun applyBlendMode(blendMode: String?) {
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
-            val paint = android.graphics.Paint()
-            paint.blendMode = when (blendMode) {
-                "Screen (Remove Black)" -> android.graphics.BlendMode.SCREEN
-                "Multiply (Remove White)" -> android.graphics.BlendMode.MULTIPLY
-                "Add (Glow)" -> android.graphics.BlendMode.PLUS
-                else -> android.graphics.BlendMode.SRC_OVER
-            }
-            dancerImageView?.setLayerType(View.LAYER_TYPE_HARDWARE, paint)
-        }
         if (android.os.Build.VERSION.SDK_INT >= 31) {
-            if (blendMode == "Chroma Key (Green)") {
-                val shader = android.graphics.RuntimeShader("""
+            val shaderString = when (blendMode) {
+                "Chroma Key (Green)" -> """
                     uniform shader image;
                     half4 main(float2 coord) {
                         half4 color = image.eval(coord);
@@ -561,11 +525,44 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
                         }
                         return color;
                     }
-                """)
+                """
+                "Screen (Remove Black)" -> """
+                    uniform shader image;
+                    half4 main(float2 coord) {
+                        half4 color = image.eval(coord);
+                        float luma = (color.r * 0.299 + color.g * 0.587 + color.b * 0.114);
+                        if (luma < 0.1) {
+                            return half4(0.0);
+                        }
+                        return color;
+                    }
+                """
+                "Multiply (Remove White)" -> """
+                    uniform shader image;
+                    half4 main(float2 coord) {
+                        half4 color = image.eval(coord);
+                        float luma = (color.r * 0.299 + color.g * 0.587 + color.b * 0.114);
+                        if (luma > 0.9) {
+                            return half4(0.0);
+                        }
+                        return color;
+                    }
+                """
+                else -> null
+            }
+            
+            if (shaderString != null) {
+                val shader = android.graphics.RuntimeShader(shaderString)
                 dancerImageView?.setRenderEffect(android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "image"))
             } else {
                 dancerImageView?.setRenderEffect(null)
             }
+        }
+        
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val paint = android.graphics.Paint()
+            paint.blendMode = if (blendMode == "Add (Glow)") android.graphics.BlendMode.PLUS else android.graphics.BlendMode.SRC_OVER
+            dancerImageView?.setLayerType(View.LAYER_TYPE_HARDWARE, paint)
         }
     }
 
