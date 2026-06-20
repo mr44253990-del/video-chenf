@@ -271,12 +271,36 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     Switch(checked = sensorEnabled, onCheckedChange = { sensorEnabled = it; prefs.edit().putBoolean("sensorEnabled", it).apply() })
                 }
                 
+                var gifBlendMode by remember { mutableStateOf(prefs.getString("gifBlendMode", "Normal") ?: "Normal") }
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    Text("GIF Background Removal (Blend Mode)", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    SettingDropdown("", gifBlendMode, listOf("Normal", "Screen (Remove Black)", "Multiply (Remove White)", "Add (Glow)", "Chroma Key (Green)")) { 
+                        gifBlendMode = it; prefs.edit().putString("gifBlendMode", it).apply() 
+                    }
+                }
+                
                 var visStyle by remember { mutableStateOf(prefs.getString("visualizerStyle", "Wave") ?: "Wave") }
                 Column(Modifier.padding(16.dp)) {
                     Text("Visualizer Style", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    SettingDropdown("", visStyle, listOf("Wave", "Bars", "Circle")) { 
+                    SettingDropdown("", visStyle, listOf("Wave", "Bars", "Circle", "Radial Bars", "Polygon", "Spike", "Fire Particles")) { 
                         visStyle = it; prefs.edit().putString("visualizerStyle", it).apply() 
                     }
+                }
+                
+                Button(
+                    onClick = {
+                        val intent = android.content.Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
+                        intent.putExtra(android.media.audiofx.AudioEffect.EXTRA_AUDIO_SESSION, 0)
+                        try {
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "System Equalizer not found", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeon)
+                ) {
+                    Text("Open System Equalizer / Bass Boost", color = Color.Black)
                 }
             }
         }

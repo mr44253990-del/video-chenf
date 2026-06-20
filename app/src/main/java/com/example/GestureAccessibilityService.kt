@@ -444,11 +444,46 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
         }
         
         dancerImageView = android.widget.ImageView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(size, size * 2, Gravity.CENTER)
+            layoutParams = FrameLayout.LayoutParams(size, size * 2, Gravity.CENTER).apply {
+                bottomMargin = 100 // give space for media controls
+            }
             scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
         }
         
+        val mediaControlsLayout = LinearLayout(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, 
+                FrameLayout.LayoutParams.WRAP_CONTENT, 
+                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            ).apply { bottomMargin = 20 }
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.VISIBLE
+            
+            // Prev Button
+            addView(android.widget.ImageButton(this@GestureAccessibilityService).apply {
+                setImageResource(android.R.drawable.ic_media_previous)
+                setBackgroundColor(Color.TRANSPARENT)
+                setPadding(20, 20, 20, 20)
+                setOnClickListener { sendMediaKeyEvent(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS) }
+            })
+            // Play/Pause Button
+            addView(android.widget.ImageButton(this@GestureAccessibilityService).apply {
+                setImageResource(android.R.drawable.ic_media_play)
+                setBackgroundColor(Color.TRANSPARENT)
+                setPadding(40, 20, 40, 20)
+                setOnClickListener { sendMediaKeyEvent(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) }
+            })
+            // Next Button
+            addView(android.widget.ImageButton(this@GestureAccessibilityService).apply {
+                setImageResource(android.R.drawable.ic_media_next)
+                setBackgroundColor(Color.TRANSPARENT)
+                setPadding(20, 20, 20, 20)
+                setOnClickListener { sendMediaKeyEvent(android.view.KeyEvent.KEYCODE_MEDIA_NEXT) }
+            })
+        }
+        
         dancerOverlayRoot?.addView(dancerImageView)
+        dancerOverlayRoot?.addView(mediaControlsLayout)
         
         // Draggable logic for Dancer (removed manual drag, syncs with base)
 
@@ -479,7 +514,12 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
 
     private fun loadDancerImage() {
         val customGifPath = prefs.getString("customGifPath", null)
-        if (customGifPath == currentGifPath && dancerImageView?.drawable != null) return
+        val gifBlendMode = prefs.getString("gifBlendMode", "Normal")
+        
+        if (customGifPath == currentGifPath && dancerImageView?.drawable != null) {
+            applyBlendMode(gifBlendMode)
+            return
+        }
         currentGifPath = customGifPath
         val imageFile = if (customGifPath != null) File(customGifPath) else null
 
@@ -493,6 +533,47 @@ class GestureAccessibilityService : AccessibilityService(), SensorEventListener 
             }
             crossfade(true)
         }
+        applyBlendMode(gifBlendMode)
+    }
+
+    private fun applyBlendMode(blendMode: String?) {
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val paint = android.graphics.Paint()
+            paint.blendMode = when (blendMode) {
+                "Screen (Remove Black)" -> android.graphics.BlendMode.SCREEN
+                "Multiply (Remove White)" -> android.graphics.BlendMode.MULTIPLY
+                "Add (Glow)" -> android.graphics.BlendMode.PLUS
+                else -> android.graphics.BlendMode.SRC_OVER
+            }
+            dancerImageView?.setLayerType(View.LAYER_TYPE_HARDWARE, paint)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            if (blendMode == "Chroma Key (Green)") {
+                val shader = android.graphics.RuntimeShader("""
+                    uniform shader image;
+                    half4 main(float2 coord) {
+                        half4 color = image.eval(coord);
+                        float g = color.g;
+                        float r = color.r;
+                        float b = color.b;
+                        if (g > r * 1.2 && g > b * 1.2 && g > 0.2) {
+                            return half4(0.0);
+                        }
+                        return color;
+                    }
+                """)
+                dancerImageView?.setRenderEffect(android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "image"))
+            } else {
+                dancerImageView?.setRenderEffect(null)
+            }
+        }
+    }
+
+    private fun sendMediaKeyEvent(keyCode: Int) {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        audioManager.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyCode))
+        audioManager.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, keyCode))
+        vibrate(30)
     }
 
     private fun startDancerRoutine() {

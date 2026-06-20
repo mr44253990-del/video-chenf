@@ -199,12 +199,15 @@ class VisualizerBubbleView(context: Context) : View(context) {
         
         drawPath.reset()
         
-        if (style == "Wave") {
-            drawWave(canvas, w, h, cy, linearGradient)
-        } else if (style == "Bars") {
-            drawBars(canvas, w, h, cy, linearGradient)
-        } else if (style == "Circle") {
-            drawCircle(canvas, w, h, cy)
+        when (style) {
+            "Wave" -> drawWave(canvas, w, h, cy, linearGradient)
+            "Bars" -> drawBars(canvas, w, h, cy, linearGradient)
+            "Circle" -> drawCircle(canvas, w, h, cy)
+            "Radial Bars" -> drawRadialBars(canvas, w, h, cy)
+            "Polygon" -> drawPolygon(canvas, w, h, cy)
+            "Spike" -> drawSpike(canvas, w, h, cy)
+            "Fire Particles" -> drawFire(canvas, w, h, cy)
+            else -> drawWave(canvas, w, h, cy, linearGradient)
         }
 
         val iter = particles.iterator()
@@ -353,6 +356,101 @@ class VisualizerBubbleView(context: Context) : View(context) {
         }
         canvas.drawPath(drawPath, glowPaint)
         canvas.drawPath(drawPath, paint)
+    }
+
+    private fun drawRadialBars(canvas: Canvas, w: Float, h: Float, cy: Float) {
+        val cx = w / 2
+        val radius = 80f
+        val count = 40
+        val angleStep = Math.PI * 2 / count
+        
+        paint.shader = RadialGradient(cx, cy - radius, radius * 3, colors, null, Shader.TileMode.CLAMP)
+        glowPaint.shader = paint.shader
+        
+        for (i in 0 until count) {
+            val angle = i * angleStep
+            val magIndex = (i * magnitudes.size / count).coerceIn(0, magnitudes.size - 1)
+            var mag = if (isPlaying) magnitudes[magIndex] * 1.5f * intensityMultiplier else 10f
+            mag = mag.coerceIn(10f, h * 0.4f)
+            
+            val innerR = radius + if (!isPlaying) sin(idlePhase).toFloat() * 5f else 0f
+            val outerR = innerR + mag
+            
+            val x1 = cx + cos(angle).toFloat() * innerR
+            val y1 = (cy - radius) + sin(angle).toFloat() * innerR
+            val x2 = cx + cos(angle).toFloat() * outerR
+            val y2 = (cy - radius) + sin(angle).toFloat() * outerR
+            
+            canvas.drawLine(x1, y1, x2, y2, glowPaint)
+            canvas.drawLine(x1, y1, x2, y2, paint)
+        }
         postInvalidateOnAnimation()
+    }
+    
+    private fun drawPolygon(canvas: Canvas, w: Float, h: Float, cy: Float) {
+        val cx = w / 2
+        val radius = 90f
+        val count = 6 // Hexagon
+        val angleStep = Math.PI * 2 / count
+        
+        paint.shader = RadialGradient(cx, cy - radius, radius * 2, colors, null, Shader.TileMode.CLAMP)
+        glowPaint.shader = paint.shader
+        
+        drawPath.reset()
+        for (i in 0..count) {
+            val angle = i * angleStep
+            val magIndex = (i * magnitudes.size / count).coerceIn(0, magnitudes.size - 1)
+            var mag = if (isPlaying) magnitudes[magIndex] * 1.0f * intensityMultiplier else 0f
+            mag = mag.coerceIn(0f, h * 0.3f)
+            
+            val r = radius + mag + (if (!isPlaying) Math.abs(sin(idlePhase).toFloat()) * 10f else 0f)
+            val x = cx + cos(angle).toFloat() * r
+            val y = (cy - radius) + sin(angle).toFloat() * r
+            
+            if (i == 0) drawPath.moveTo(x, y)
+            else drawPath.lineTo(x, y)
+        }
+        drawPath.close()
+        canvas.drawPath(drawPath, glowPaint)
+        canvas.drawPath(drawPath, paint)
+        postInvalidateOnAnimation()
+    }
+    
+    private fun drawSpike(canvas: Canvas, w: Float, h: Float, cy: Float) {
+        val cx = w / 2
+        val count = 30
+        val dx = w / (count - 1)
+        
+        drawPath.reset()
+        drawPath.moveTo(0f, cy)
+        for (i in 1 until count) {
+            val magIndex = (i * magnitudes.size / count).coerceIn(0, magnitudes.size - 1)
+            var mag = if (isPlaying) magnitudes[magIndex] * 2.0f * intensityMultiplier else 0f
+            mag = mag.coerceIn(0f, h * 0.6f)
+            val y = cy - (if (i % 2 == 0) mag else 0f) - (if (!isPlaying) Math.abs(sin(idlePhase)) * 5f else 0f).toFloat()
+            drawPath.lineTo(i * dx, y)
+        }
+        canvas.drawPath(drawPath, glowPaint)
+        canvas.drawPath(drawPath, paint)
+        postInvalidateOnAnimation()
+    }
+    
+    private fun drawFire(canvas: Canvas, w: Float, h: Float, cy: Float) {
+        // Fire just spawns particles upward and draws a shaky baseline
+        val count = 50
+        val dx = w / (count - 1)
+        drawPath.reset()
+        for (i in 0 until count) {
+            val mag = if (isPlaying) (Math.random() * magnitudes[(i * 2).coerceIn(0, magnitudes.size - 1)]).toFloat() * intensityMultiplier else (Math.random() * 5).toFloat()
+            val y = cy - mag - 10f
+            if (i == 0) drawPath.moveTo(0f, y)
+            else drawPath.lineTo(i * dx, y)
+            
+            if (isPlaying && Math.random() > 0.7) {
+                spawnParticles(mag.toFloat(), false)
+            }
+        }
+        canvas.drawPath(drawPath, glowPaint)
+        canvas.drawPath(drawPath, paint)
     }
 }
